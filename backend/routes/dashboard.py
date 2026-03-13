@@ -81,7 +81,7 @@ async def vendor_visits():
 async def staff_per_site():
     data = _query(
         "SELECT s.name as site, COUNT(p.id) as count "
-        "FROM sites s LEFT JOIN people p ON p.site_id = s.id AND p.status = 'active' "
+        "FROM sites s LEFT JOIN people p ON p.site_id = s.id AND p.employer_id IS NOT NULL AND p.status = 'active' "
         "GROUP BY s.id, s.name ORDER BY count DESC"
     )
     return {"data": data}

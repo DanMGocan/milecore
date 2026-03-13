@@ -17,10 +17,7 @@ def _query_rows(sql: str, params: list | None = None) -> list[dict]:
 def _get_supervisors() -> list[dict]:
     return _query_rows(
         "SELECT id, first_name, last_name, email, site_id FROM people "
-        "WHERE (LOWER(person_type) LIKE '%supervisor%' "
-        "   OR LOWER(role_title) LIKE '%supervisor%' "
-        "   OR LOWER(role_title) LIKE '%site manager%') "
-        "AND email IS NOT NULL AND status = 'active'"
+        "WHERE is_supervisor = 1 AND email IS NOT NULL AND status = 'active'"
     )
 
 

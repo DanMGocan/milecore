@@ -30,25 +30,22 @@
 
 body {
     font-family: var(--font-sans);
-    background: url('../img/background.avif') center/cover fixed;
+    background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
     line-height: 1.5;
 }
 
 .app {
-    max-width: 70%;
-    margin: 0 auto;
-    background: var(--bg-primary);
-    border-left: 1px solid var(--border);
-    border-right: 1px solid var(--border);
     min-height: 100vh;
+    width: 100%;
 }
 
 /* === Navbar === */
 .navbar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     height: 52px;
     padding: 0 20px;
     background: var(--bg-secondary);
@@ -57,17 +54,41 @@ body {
 }
 
 .nav-brand {
-    font-size: 16px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.nav-brand-logo {
+    height: 28px;
+    width: auto;
+}
+
+.nav-brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+}
+
+.nav-brand-title {
+    font-size: 15px;
     font-weight: 700;
     color: var(--accent);
     letter-spacing: -0.3px;
-    margin-right: 8px;
+}
+
+.nav-brand-motto {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
 }
 
 .nav-links {
     display: flex;
     gap: 2px;
-    flex: 1;
 }
 
 .nav-link {
@@ -91,6 +112,21 @@ body {
 .nav-link.active {
     background: var(--accent-dim);
     color: var(--accent);
+}
+
+.approval-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 6px;
+    background: var(--warning);
+    color: var(--bg-primary);
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 9px;
 }
 
 .nav-user {
@@ -157,7 +193,7 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
-    max-width: 700px;
+    max-width: 1100px;
     margin: 0 auto;
     flex: 1;
     min-width: 0;
@@ -311,12 +347,35 @@ body {
 }
 
 .profile-pic {
-    width: 36px;
-    height: 36px;
+    width: 64px;
+    height: 64px;
     border-radius: 50%;
-    border: 2px solid var(--border);
+    border: none;
     flex-shrink: 0;
     object-fit: cover;
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.message-row-user .profile-pic {
+    outline: 2px solid #facc15;
+    outline-offset: 3px;
+    box-shadow: 3px 3px 0 #facc15;
+}
+
+.message-row-user .profile-pic:hover {
+    box-shadow: 6px 6px 0 #facc15;
+    transform: translate(-2px, -2px);
+}
+
+.message-row-assistant .profile-pic {
+    outline: 2px solid #7dd3fc;
+    outline-offset: 3px;
+    box-shadow: 3px 3px 0 #7dd3fc;
+}
+
+.message-row-assistant .profile-pic:hover {
+    box-shadow: 6px 6px 0 #7dd3fc;
+    transform: translate(-2px, -2px);
 }
 
 /* Empty State (centered logo) */
@@ -409,7 +468,8 @@ body {
 
 /* Chat Input */
 .chat-input-container {
-    padding: 16px 24px;
+    padding: 24px 24px;
+    margin-bottom: 24px;
     border-top: 1px solid var(--border);
     background: var(--bg-secondary);
 }
@@ -417,7 +477,7 @@ body {
 .chat-input-wrapper {
     display: flex;
     gap: 8px;
-    max-width: 700px;
+    max-width: 1100px;
     margin: 0 auto;
 }
 
@@ -466,6 +526,42 @@ body {
 .upload-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* File Chip */
+.file-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 16px;
+    font-size: 12px;
+    color: var(--accent);
+    white-space: nowrap;
+    max-width: 180px;
+}
+
+.file-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-chip-dismiss {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+}
+
+.file-chip-dismiss:hover {
+    opacity: 1;
 }
 
 .send-btn {
@@ -920,4 +1016,13 @@ body {
 .recharts-cartesian-grid-horizontal line,
 .recharts-cartesian-grid-vertical line {
     stroke: var(--border);
+}
+
+@media (min-width: 1200px) {
+    .app {
+        max-width: 80%;
+        margin: 0 auto;
+        border-left: 1px solid var(--border);
+        border-right: 1px solid var(--border);
+    }
 }

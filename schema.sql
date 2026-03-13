@@ -1,50 +1,47 @@
 -- MileCore Site Operations Database Schema
 -- Full site operations schema for technical support environments
 
+-- Organizations
+CREATE TABLE IF NOT EXISTS companies (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,         -- 'employer' | 'client' | 'vendor'
+    category TEXT,              -- e.g. 'hardware' | 'software' | 'services' | 'telecom' | 'av' | 'facilities'
+    email TEXT,
+    phone TEXT,
+    website TEXT,
+    address TEXT,
+    notes TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Core Infrastructure
 CREATE TABLE IF NOT EXISTS sites (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
-    client_name TEXT,
+    client_id INTEGER,
     address TEXT,
     city TEXT,
     country TEXT,
     timezone TEXT,
     status TEXT DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (client_id) REFERENCES companies(id)
 );
 
-CREATE TABLE IF NOT EXISTS locations (
+CREATE TABLE IF NOT EXISTS rooms (
     id INTEGER PRIMARY KEY,
     site_id INTEGER NOT NULL,
-    parent_location_id INTEGER,
     name TEXT NOT NULL,
-    location_type TEXT NOT NULL,
     code TEXT,
     description TEXT,
     capacity INTEGER,
     status TEXT DEFAULT 'active',
-    FOREIGN KEY (site_id) REFERENCES sites(id),
-    FOREIGN KEY (parent_location_id) REFERENCES locations(id)
-);
-
--- People & Teams
-CREATE TABLE IF NOT EXISTS people (
-    id INTEGER PRIMARY KEY,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    email TEXT,
-    phone TEXT,
-    role_title TEXT,
-    person_type TEXT NOT NULL,
-    department TEXT,
-    company TEXT,
-    site_id INTEGER,
-    status TEXT DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (site_id) REFERENCES sites(id)
 );
 
+-- People & Teams
 CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
@@ -53,14 +50,46 @@ CREATE TABLE IF NOT EXISTS teams (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS team_members (
+CREATE TABLE IF NOT EXISTS people (
     id INTEGER PRIMARY KEY,
-    team_id INTEGER NOT NULL,
-    person_id INTEGER NOT NULL,
-    team_role TEXT,
-    start_date DATE,
-    end_date DATE,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    role_title TEXT,
+    department TEXT,
+    site_id INTEGER,
+    team_id INTEGER,
+    team_role TEXT,              -- 'lead' | 'member' | 'backup'
+    -- Organizational links (nullable, not mutually exclusive)
+    employer_id INTEGER,         -- FK companies: who they work for
+    client_id INTEGER,           -- FK companies: which client org they represent
+    vendor_id INTEGER,           -- FK companies: which vendor they represent
+    -- Employee-specific
+    is_supervisor INTEGER DEFAULT 0,
+    hire_date DATE,
+    -- User-specific
+    is_user INTEGER DEFAULT 0,
+    username TEXT UNIQUE,
+    user_role TEXT DEFAULT 'user',  -- 'user' | 'admin'
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (site_id) REFERENCES sites(id),
     FOREIGN KEY (team_id) REFERENCES teams(id),
+    FOREIGN KEY (employer_id) REFERENCES companies(id),
+    FOREIGN KEY (client_id) REFERENCES companies(id),
+    FOREIGN KEY (vendor_id) REFERENCES companies(id)
+);
+
+-- PTO / Leave
+CREATE TABLE IF NOT EXISTS pto (
+    id INTEGER PRIMARY KEY,
+    person_id INTEGER NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    leave_type TEXT NOT NULL DEFAULT 'pto',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES people(id)
 );
 
@@ -80,14 +109,14 @@ CREATE TABLE IF NOT EXISTS assets (
     lifecycle_status TEXT DEFAULT 'active',
     ownership_type TEXT,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     assigned_to_person_id INTEGER,
     notes TEXT,
     important INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (site_id) REFERENCES sites(id),
-    FOREIGN KEY (location_id) REFERENCES locations(id),
+    FOREIGN KEY (room_id) REFERENCES rooms(id),
     FOREIGN KEY (assigned_to_person_id) REFERENCES people(id)
 );
 
@@ -107,7 +136,7 @@ CREATE TABLE IF NOT EXISTS requests (
     request_number TEXT UNIQUE,
     requester_person_id INTEGER,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     asset_id INTEGER,
     request_type TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -123,7 +152,7 @@ CREATE TABLE IF NOT EXISTS requests (
     important INTEGER DEFAULT 0,
     FOREIGN KEY (requester_person_id) REFERENCES people(id),
     FOREIGN KEY (site_id) REFERENCES sites(id),
-    FOREIGN KEY (location_id) REFERENCES locations(id),
+    FOREIGN KEY (room_id) REFERENCES rooms(id),
     FOREIGN KEY (asset_id) REFERENCES assets(id)
 );
 
@@ -132,7 +161,7 @@ CREATE TABLE IF NOT EXISTS technical_issues (
     request_id INTEGER,
     asset_id INTEGER,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     issue_type TEXT NOT NULL,
     category TEXT,
     brand TEXT,
@@ -161,7 +190,7 @@ CREATE TABLE IF NOT EXISTS issue_occurrences (
     asset_id INTEGER,
     request_id INTEGER,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     observed_by_person_id INTEGER,
     observed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     notes TEXT,
@@ -173,7 +202,7 @@ CREATE TABLE IF NOT EXISTS issue_occurrences (
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     event_type TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
@@ -214,7 +243,7 @@ CREATE TABLE IF NOT EXISTS notes (
     title TEXT,
     content TEXT NOT NULL,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     asset_id INTEGER,
     request_id INTEGER,
     technical_issue_id INTEGER,
@@ -260,7 +289,7 @@ CREATE TABLE IF NOT EXISTS inventory_stock (
     id INTEGER PRIMARY KEY,
     inventory_item_id INTEGER NOT NULL,
     site_id INTEGER NOT NULL,
-    location_id INTEGER,
+    room_id INTEGER,
     quantity_on_hand INTEGER NOT NULL DEFAULT 0,
     quantity_reserved INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -272,7 +301,7 @@ CREATE TABLE IF NOT EXISTS inventory_transactions (
     id INTEGER PRIMARY KEY,
     inventory_item_id INTEGER NOT NULL,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     transaction_type TEXT NOT NULL,
     quantity INTEGER NOT NULL,
     related_person_id INTEGER,
@@ -284,11 +313,11 @@ CREATE TABLE IF NOT EXISTS inventory_transactions (
     FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id)
 );
 
--- Changes & Vendors
+-- Changes & Contracts
 CREATE TABLE IF NOT EXISTS changes (
     id INTEGER PRIMARY KEY,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     asset_id INTEGER,
     title TEXT NOT NULL,
     description TEXT,
@@ -307,19 +336,9 @@ CREATE TABLE IF NOT EXISTS changes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS vendors (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    vendor_type TEXT,
-    support_email TEXT,
-    support_phone TEXT,
-    website TEXT,
-    notes TEXT
-);
-
 CREATE TABLE IF NOT EXISTS vendor_contracts (
     id INTEGER PRIMARY KEY,
-    vendor_id INTEGER NOT NULL,
+    company_id INTEGER NOT NULL,
     site_id INTEGER,
     contract_name TEXT NOT NULL,
     contract_type TEXT,
@@ -328,7 +347,7 @@ CREATE TABLE IF NOT EXISTS vendor_contracts (
     sla_description TEXT,
     status TEXT DEFAULT 'active',
     notes TEXT,
-    FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+    FOREIGN KEY (company_id) REFERENCES companies(id)
 );
 
 -- Knowledge & Metadata
@@ -343,7 +362,7 @@ CREATE TABLE IF NOT EXISTS knowledge_articles (
     model TEXT,
     asset_type TEXT,
     site_id INTEGER,
-    location_id INTEGER,
+    room_id INTEGER,
     created_by_person_id INTEGER,
     approved_by_person_id INTEGER,
     status TEXT DEFAULT 'draft',
@@ -381,22 +400,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT NOT NULL
 );
 
--- Users & Chat Persistence
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    display_name TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
+-- Chat Persistence
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL,
+    person_id INTEGER NOT NULL,
     title TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (person_id) REFERENCES people(id)
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -423,3 +434,37 @@ BEGIN UPDATE inventory_stock SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.i
 
 CREATE TRIGGER IF NOT EXISTS knowledge_articles_updated_at AFTER UPDATE ON knowledge_articles
 BEGIN UPDATE knowledge_articles SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+-- Query Approval System
+CREATE TABLE IF NOT EXISTS approval_rules (
+    id INTEGER PRIMARY KEY,
+    description TEXT NOT NULL,
+    created_by_person_id INTEGER,
+    is_active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by_person_id) REFERENCES people(id)
+);
+
+CREATE TABLE IF NOT EXISTS pending_approvals (
+    id INTEGER PRIMARY KEY,
+    sql_statement TEXT NOT NULL,
+    explanation TEXT NOT NULL,
+    matched_rule_id INTEGER,
+    matched_rule_description TEXT,
+    submitted_by_person_id INTEGER,
+    status TEXT DEFAULT 'pending',
+    reviewed_by_person_id INTEGER,
+    review_note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP,
+    FOREIGN KEY (matched_rule_id) REFERENCES approval_rules(id),
+    FOREIGN KEY (submitted_by_person_id) REFERENCES people(id),
+    FOREIGN KEY (reviewed_by_person_id) REFERENCES people(id)
+);
+
+-- Seed data
+INSERT OR IGNORE INTO companies (id, name, type) VALUES (1, 'Milestone', 'employer');
+INSERT OR IGNORE INTO people (id, first_name, last_name, employer_id, is_user, username, user_role)
+    VALUES (1, 'Dan', 'Admin', 1, 1, 'dan', 'admin');
+INSERT OR IGNORE INTO people (id, first_name, last_name, employer_id, is_user, username, user_role)
+    VALUES (2, 'Bob', 'User', 1, 1, 'bob', 'user');

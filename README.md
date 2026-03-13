@@ -1,3 +1,4 @@
 This is the initial commit for the Milestone hackaton. Wishing best of luck to all the teams!
 
-MileCore profile Pic: Image by <a href="https://pixabay.com/users/monikflores-4709754/?utm_source=link-attribution&utm_medium=referral&utm_campaign=image&utm_content=2141095">Monica</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=image&utm_content=2141095">Pixabay</a>
+Profile pictures: https://pixabay.com/users/jensenartofficial-31380959/ 
+Background image: https://pixabay.com/illustrations/wood-texture-dark-black-wall-1759566/ 

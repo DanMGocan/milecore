@@ -1,11 +1,137 @@
 import csv
 import io
+import re
+import uuid
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from backend.database import execute_query, get_tables
 
 router = APIRouter()
+
+_staged_files: dict[str, dict] = {}  # file_id -> {rows, headers, filename}
+
+
+@router.post("/upload/stage")
+async def stage_csv(file: UploadFile = File(...)):
+    """Stage a CSV for AI-powered import. Returns summary for Claude to analyze."""
+    if not file.filename or not file.filename.endswith((".csv", ".CSV")):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    rows = list(reader)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+
+    file_id = str(uuid.uuid4())
+    headers = list(rows[0].keys())
+    _staged_files[file_id] = {"rows": rows, "headers": headers, "filename": file.filename}
+
+    return {
+        "file_id": file_id,
+        "filename": file.filename,
+        "headers": headers,
+        "sample_rows": rows[:3],
+        "total_rows": len(rows),
+    }
+
+
+def import_staged_csv(file_id: str, table: str, column_mapping: dict[str, str]) -> dict:
+    """Import a staged CSV into the database with column remapping."""
+    staged = _staged_files.pop(file_id, None)
+    if staged is None:
+        return {"error": f"No staged file found with id {file_id}"}
+
+    if not re.match(r"^\w+$", table):
+        return {"error": f"Invalid table name: {table}"}
+
+    rows_inserted = 0
+    rows_skipped = 0
+    errors = []
+
+    for i, row in enumerate(staged["rows"]):
+        mapped = {}
+        for csv_col, table_col in column_mapping.items():
+            if csv_col in row:
+                mapped[table_col] = row[csv_col]
+
+        mapped.pop("id", None)
+
+        if not mapped:
+            rows_skipped += 1
+            continue
+
+        columns = ", ".join([f'"{k}"' for k in mapped.keys()])
+        placeholders = ", ".join(["?"] * len(mapped))
+        values = list(mapped.values())
+        sql = f"INSERT OR IGNORE INTO {table} ({columns}) VALUES ({placeholders})"
+        result = execute_query(sql, values)
+
+        if "error" in result:
+            errors.append(f"Row {i + 1}: {result['error']}")
+        elif result.get("rowcount", 0) == 0:
+            rows_skipped += 1
+        else:
+            rows_inserted += 1
+
+    return {
+        "rows_inserted": rows_inserted,
+        "rows_skipped": rows_skipped,
+        "errors": errors,
+    }
+
+
+def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str]) -> dict:
+    """Generate a complete INSERT statement from a staged CSV. Pops the staged file."""
+    staged = _staged_files.pop(file_id, None)
+    if staged is None:
+        return {"error": f"No staged file found with id {file_id}"}
+    if not re.match(r"^\w+$", table):
+        return {"error": f"Invalid table name: {table}"}
+
+    all_values = []
+    skipped = 0
+    for row in staged["rows"]:
+        mapped = {}
+        for csv_col, table_col in column_mapping.items():
+            if csv_col in row:
+                mapped[table_col] = row[csv_col]
+        mapped.pop("id", None)
+        if not mapped:
+            skipped += 1
+            continue
+        all_values.append(mapped)
+
+    if not all_values:
+        return {"error": "No rows to import after mapping"}
+
+    columns = list(all_values[0].keys())
+    col_list = ", ".join([f'"{c}"' for c in columns])
+
+    def quote(v):
+        if v is None or v == "":
+            return "NULL"
+        return "'" + str(v).replace("'", "''") + "'"
+
+    row_strs = []
+    for vals in all_values:
+        row_strs.append("(" + ", ".join(quote(vals.get(c)) for c in columns) + ")")
+
+    sql = f"INSERT OR IGNORE INTO {table} ({col_list}) VALUES\n" + ",\n".join(row_strs)
+
+    return {
+        "sql": sql,
+        "table": table,
+        "total_rows": len(all_values),
+        "skipped": skipped,
+    }
 
 
 @router.post("/upload")

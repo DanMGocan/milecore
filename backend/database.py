@@ -101,12 +101,33 @@ def _log_audit(sql: str, lastrowid: int | None) -> None:
             pass  # Don't fail the main operation if audit logging fails
 
 
+def validate_query(sql: str, params: list | None = None) -> dict[str, Any]:
+    """Dry-run a write query using SAVEPOINT. Returns success or error without committing."""
+    conn = get_connection()
+    with _lock:
+        try:
+            conn.execute("SAVEPOINT validation")
+            cursor = conn.execute(sql, params or [])
+            rowcount = cursor.rowcount
+            conn.execute("ROLLBACK TO validation")
+            conn.execute("RELEASE validation")
+            return {"valid": True, "rowcount": rowcount}
+        except Exception as e:
+            try:
+                conn.execute("ROLLBACK TO validation")
+                conn.execute("RELEASE validation")
+            except Exception:
+                conn.rollback()
+            return {"valid": False, "error": str(e)}
+
+
 def get_home_site() -> dict[str, Any] | None:
     """Return the configured home site or None."""
     conn = get_connection()
     cursor = conn.execute(
-        "SELECT s.id, s.name, s.client_name, s.city "
+        "SELECT s.id, s.name, c.name as client_name, s.city "
         "FROM app_settings a JOIN sites s ON s.id = CAST(a.value AS INTEGER) "
+        "LEFT JOIN companies c ON s.client_id = c.id "
         "WHERE a.key = 'home_site_id'"
     )
     row = cursor.fetchone()

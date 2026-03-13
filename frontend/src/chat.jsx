@@ -65,13 +65,14 @@ function ChatMessage({ role, text, sql }) {
     );
 }
 
-export function ChatPage() {
+export function ChatPage({ personId = 1 }) {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [sessionId, setSessionId] = useState(null);
     const [homeSiteChecked, setHomeSiteChecked] = useState(false);
     const [sessions, setSessions] = useState([]);
+    const [pendingFile, setPendingFile] = useState(null);
     const messagesEnd = useRef(null);
     const fileRef = useRef(null);
     const [pics] = useState(() => {
@@ -83,8 +84,14 @@ export function ChatPage() {
     });
 
     const loadSessions = () => {
-        fetch('/api/sessions').then(r => r.json()).then(d => setSessions(d.sessions || [])).catch(() => {});
+        fetch(`/api/sessions?person_id=${personId}`).then(r => r.json()).then(d => setSessions(d.sessions || [])).catch(() => {});
     };
+
+    useEffect(() => {
+        setSessionId(null);
+        setMessages([]);
+        loadSessions();
+    }, [personId]);
 
     useEffect(() => {
         loadSessions();
@@ -124,17 +131,37 @@ export function ChatPage() {
 
     const sendMessage = async () => {
         const text = input.trim();
-        if (!text || loading) return;
+        if ((!text && !pendingFile) || loading) return;
 
+        const fileToUpload = pendingFile;
+        const displayText = text || `Uploaded ${fileToUpload?.name}`;
         setInput('');
-        setMessages(prev => [...prev, { role: 'user', text }]);
+        setPendingFile(null);
+        setMessages(prev => [...prev, { role: 'user', text: displayText }]);
         setLoading(true);
 
         try {
+            let messageToSend = text;
+            if (fileToUpload) {
+                const formData = new FormData();
+                formData.append('file', fileToUpload);
+                const uploadRes = await fetch('/api/upload/stage', { method: 'POST', body: formData });
+                const uploadData = await uploadRes.json();
+                if (!uploadRes.ok) throw new Error(uploadData.detail || 'Upload failed');
+
+                const samplePreview = uploadData.sample_rows.map(r => JSON.stringify(r)).join('\n');
+                const stagingSummary = `Import this CSV file (file_id: ${uploadData.file_id}).\n` +
+                    `Filename: ${uploadData.filename}\n` +
+                    `Columns: ${uploadData.headers.join(', ')}\n` +
+                    `Total rows: ${uploadData.total_rows}\n` +
+                    `Sample data:\n${samplePreview}`;
+                messageToSend = text ? `${stagingSummary}\n\nUser note: ${text}` : stagingSummary;
+            }
+
             const res = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text, session_id: sessionId }),
+                body: JSON.stringify({ message: messageToSend, session_id: sessionId, person_id: personId }),
             });
 
             if (!res.ok) {
@@ -205,34 +232,13 @@ export function ChatPage() {
         }
     };
 
-    const handleFileUpload = async (file) => {
+    const stageFile = (file) => {
         if (!file) return;
         if (!file.name.toLowerCase().endsWith('.csv')) {
             setMessages(prev => [...prev, { role: 'error', text: 'Only CSV files are supported' }]);
             return;
         }
-
-        setMessages(prev => [...prev, { role: 'user', text: `Uploading ${file.name}` }]);
-        setLoading(true);
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        try {
-            const res = await fetch('/api/upload', { method: 'POST', body: formData });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || 'Upload failed');
-
-            let msg = `Uploaded **${file.name}** to table **${data.table}** — ${data.rows_inserted} rows inserted.`;
-            if (data.errors && data.errors.length > 0) {
-                msg += `\n\n${data.errors.length} error(s): ${data.errors.slice(0, 3).join('; ')}`;
-            }
-            setMessages(prev => [...prev, { role: 'assistant', text: msg }]);
-        } catch (err) {
-            setMessages(prev => [...prev, { role: 'error', text: err.message }]);
-        } finally {
-            setLoading(false);
-        }
+        setPendingFile(file);
     };
 
     const handleKeyDown = (e) => {
@@ -267,13 +273,6 @@ export function ChatPage() {
                 </div>
             </div>
             <div className="chat-container">
-                <div className="chat-header">
-                    <img src={logo} alt="Milestone Technologies" className="chat-header-logo" />
-                    <div className="chat-header-text">
-                        <div className="chat-header-brand">MileCore</div>
-                        <div className="chat-header-motto">Site Ops Assistant</div>
-                    </div>
-                </div>
                 <div className="chat-messages">
                     {messages.length === 0 && homeSiteChecked && (
                         <div className="empty-state">
@@ -330,12 +329,18 @@ export function ChatPage() {
                             type="file"
                             accept=".csv"
                             style={{ display: 'none' }}
-                            onChange={(e) => { handleFileUpload(e.target.files[0]); e.target.value = ''; }}
+                            onChange={(e) => { stageFile(e.target.files[0]); e.target.value = ''; }}
                         />
+                        {pendingFile && (
+                            <div className="file-chip">
+                                <span className="file-chip-name">{pendingFile.name}</span>
+                                <button className="file-chip-dismiss" onClick={() => setPendingFile(null)}>&times;</button>
+                            </div>
+                        )}
                         <button
                             className="send-btn"
                             onClick={sendMessage}
-                            disabled={loading || !input.trim()}
+                            disabled={loading || (!input.trim() && !pendingFile)}
                         >
                             Send
                         </button>

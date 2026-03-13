@@ -5,13 +5,13 @@ from typing import Any
 from backend.database import get_connection, _lock
 
 
-def create_session(user_id: int = 1) -> str:
+def create_session(person_id: int = 1) -> str:
     session_id = str(uuid.uuid4())
     conn = get_connection()
     with _lock:
         conn.execute(
-            "INSERT INTO chat_sessions (id, user_id) VALUES (?, ?)",
-            [session_id, user_id],
+            "INSERT INTO chat_sessions (id, person_id) VALUES (?, ?)",
+            [session_id, person_id],
         )
         conn.commit()
     return session_id
@@ -67,13 +67,13 @@ def save_history(session_id: str, messages: list[dict[str, Any]]) -> None:
         conn.commit()
 
 
-def list_sessions(user_id: int = 1) -> list[dict[str, Any]]:
+def list_sessions(person_id: int = 1) -> list[dict[str, Any]]:
     conn = get_connection()
     with _lock:
         rows = conn.execute(
             "SELECT id, title, created_at, updated_at FROM chat_sessions "
-            "WHERE user_id = ? ORDER BY updated_at DESC",
-            [user_id],
+            "WHERE person_id = ? ORDER BY updated_at DESC",
+            [person_id],
         ).fetchall()
     return [
         {"id": r[0], "title": r[1], "created_at": r[2], "updated_at": r[3]}
