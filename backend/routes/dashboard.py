@@ -1,4 +1,3 @@
-import json
 import os
 
 from fastapi import APIRouter
@@ -9,15 +8,6 @@ from backend.database import _lock, get_connection, reset_db
 from initial_seed import seed_initial_data
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def _get_last_push() -> str | None:
-    path = os.path.join(_PROJECT_ROOT, "last_push.json")
-    try:
-        with open(path) as f:
-            return json.load(f).get("timestamp")
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        return None
 
 router = APIRouter(prefix="/dashboard")
 
@@ -53,7 +43,8 @@ async def overview():
         "(SELECT COUNT(*) FROM assets WHERE important=1) + "
         "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1) AS important_items"
     )[0]
-    row["last_push"] = _get_last_push()
+    push = _query("SELECT value FROM app_settings WHERE key = 'last_push_at'")
+    row["last_push"] = push[0]["value"] if push else None
     return row
 
 

@@ -383,8 +383,6 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 if not validation.get("valid"):
                     result = {"error": f"SQL validation failed: {validation['error']}"}
                 else:
-                    # Validation passed — remove staged file so it can't be re-imported
-                    remove_staged_file(inp["file_id"])
                     # Check if any approval rules match this import
                     rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
                     matched_rule = _find_matching_rule(gen["sql"], rules.get("rows") or [])
@@ -394,6 +392,8 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                             [gen["sql"], inp.get("explanation", f"CSV import: {gen['total_rows']} rows into {gen['table']}"),
                              matched_rule["id"], matched_rule["description"]],
                         )
+                        # Queued successfully — remove staged file
+                        remove_staged_file(inp["file_id"])
                         result = {
                             "queued": True,
                             "executed": False,
@@ -407,6 +407,9 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                         result = execute_query(gen["sql"])
                         result["rows_inserted"] = result.get("rowcount", 0)
                         result["skipped"] = gen["skipped"]
+                        # Only remove staged file after successful execution
+                        if "error" not in result:
+                            remove_staged_file(inp["file_id"])
 
             sql_log.append({
                 "tool": tool_name,

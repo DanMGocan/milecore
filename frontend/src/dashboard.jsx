@@ -227,7 +227,7 @@ export function DashboardPage({ currentUser }) {
 
             {overview?.last_push && (
                 <p className="dashboard-footer-text">
-                    Repository last updated at: {new Date(overview.last_push).toLocaleString()}
+                    Version pushed to GitHub at: {new Date(overview.last_push).toLocaleString()}
                 </p>
             )}
 

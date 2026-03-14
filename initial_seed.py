@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Bootstrap the default MileCore demo company, site, and users."""
 
+import json
+import os
+
 from backend.database import _lock, get_connection
 
 
@@ -135,6 +138,20 @@ def seed_initial_data() -> None:
             """,
             [str(DEFAULT_SITE["id"])],
         )
+
+        last_push_path = os.path.join(os.path.dirname(__file__), "last_push.json")
+        try:
+            with open(last_push_path) as f:
+                push_ts = json.load(f).get("timestamp")
+        except (FileNotFoundError, json.JSONDecodeError):
+            push_ts = None
+
+        if push_ts:
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES ('last_push_at', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [push_ts],
+            )
 
         for team in DEFAULT_TEAMS:
             conn.execute(

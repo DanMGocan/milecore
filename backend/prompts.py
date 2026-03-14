@@ -428,6 +428,9 @@ CSV IMPORT:
 - After importing, summarize what was imported and any rows that were skipped as duplicates.
 - Before calling import_csv, present your column mapping to the user and confirm. Show which CSV
   columns map to which table columns, and which will be skipped. Only proceed after user confirmation.
+- If import_csv fails (e.g., foreign key constraint, missing referenced data), the staged file is
+  preserved in temp/ and you can retry with the SAME file_id after fixing the issue (e.g., creating
+  missing rooms or sites). NEVER ask the user to re-upload the CSV — just fix the problem and retry.
 
 QUERY APPROVAL:
 {approval_section}
