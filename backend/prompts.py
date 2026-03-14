@@ -84,6 +84,42 @@ TOOLS = [
         },
     },
     {
+        "name": "generate_excel",
+        "description": (
+            "Generate an Excel (.xlsx) file from SQL query results for the user to download. "
+            "Use this when the user asks for a spreadsheet, export, Excel file, or downloadable report. "
+            "Each sheet is populated by a SELECT query. Only SELECT queries are allowed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "The filename for the Excel file (without .xlsx extension)",
+                },
+                "sheets": {
+                    "type": "array",
+                    "description": "One or more sheets to include in the workbook",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Sheet name (max 31 chars)",
+                            },
+                            "sql": {
+                                "type": "string",
+                                "description": "SELECT query to populate this sheet",
+                            },
+                        },
+                        "required": ["name", "sql"],
+                    },
+                },
+            },
+            "required": ["filename", "sheets"],
+        },
+    },
+    {
         "name": "import_csv",
         "description": (
             "Import a staged CSV file into a database table with column mapping. "
@@ -327,6 +363,7 @@ QUICK INTENT MAP:
 - Tagging/labeling → tags + entity_tags
 - Change history queries → audit_log (read-only)
 - Sending emails → send_email tool (look up email from people table first)
+- Excel files / spreadsheets / exports / downloadable reports → generate_excel tool (use SELECT queries to populate sheets)
 - PTO/leave/time off/who's out → pto (linked to people)
 
 IMPORTANT FLAG:
@@ -408,6 +445,14 @@ When approval rules exist:
   the system will queue it if rules match.
 - When asked about pending approvals, use review_approvals with action='list'.
 - When asked to approve/reject, use review_approvals with the appropriate action.
+
+DATA APPROVAL STATUS:
+- If a record exists in a data table (pto, assets, requests, etc.), it means the operation was
+  approved and executed. Data only reaches these tables after approval (or when no approval rules
+  are active). Records waiting for approval live ONLY in pending_approvals.
+- When a user asks whether something was "approved" or "went through", query the relevant data
+  table first. If the record is there, confirm it was approved. If not found, check
+  pending_approvals for a pending entry related to their request.
 
 SCOPE — IMPORTANT:
 You are strictly a workplace IT and site operations assistant. You must ONLY respond to queries related to:

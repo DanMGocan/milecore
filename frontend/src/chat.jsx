@@ -68,6 +68,45 @@ function SqlBlock({ operations }) {
     );
 }
 
+function DownloadBlock({ files }) {
+    if (!files || files.length === 0) return null;
+    return (
+        <>
+            {files.map((f, i) => {
+                const res = f.result || {};
+                const sheets = res.sheets || [];
+                const sheetLabel = sheets.length === 1 ? '1 sheet' : `${sheets.length} sheets`;
+                return (
+                    <div key={i} className="download-block">
+                        <div className="download-block-info">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                            </svg>
+                            <div className="download-block-meta">
+                                <span className="download-block-filename">{res.filename || 'file.xlsx'}</span>
+                                <span className="download-block-detail">{sheetLabel}</span>
+                            </div>
+                        </div>
+                        <a
+                            className="download-block-btn"
+                            href={res.download_url || `/api/downloads/${res.file_id}`}
+                            download
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Download
+                        </a>
+                    </div>
+                );
+            })}
+        </>
+    );
+}
+
 function FileAttachment({ file }) {
     return (
         <div className="file-attachment">
@@ -81,17 +120,18 @@ function FileAttachment({ file }) {
     );
 }
 
-function ChatMessage({ role, text, sql, file, timestamp }) {
+function ChatMessage({ role, text, sql, files, file, timestamp }) {
     const cls = role === 'user' ? 'message message-user'
         : role === 'error' ? 'message message-error'
         : role === 'loading' ? 'message message-loading'
         : 'message message-assistant';
 
     return (
-        <div>
+        <div className="message-content">
             <div className={cls}>
                 {file && <FileAttachment file={file} />}
                 {role === 'loading' ? <ThinkingDots /> : role === 'assistant' ? <Markdown>{text}</Markdown> : text}
+                {role === 'assistant' && <DownloadBlock files={files} />}
                 {role === 'assistant' && <SqlBlock operations={sql} />}
             </div>
             {timestamp && <div className="message-timestamp">{timestamp}</div>}
@@ -230,6 +270,7 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
             let buffer = '';
             let assistantText = '';
             let sqlOps = [];
+            let files = [];
             let started = false;
 
             while (true) {
@@ -271,6 +312,8 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                         }
                     } else if (eventType === 'sql') {
                         sqlOps.push(data);
+                    } else if (eventType === 'file') {
+                        files.push(data);
                     } else if (eventType === 'done') {
                         if (streamRafRef.current) {
                             cancelAnimationFrame(streamRafRef.current);
@@ -278,11 +321,11 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                         }
                         if (!started) {
                             setLoading(false);
-                            setMessages(prev => [...prev, { role: 'assistant', text: assistantText, sql: sqlOps, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+                            setMessages(prev => [...prev, { role: 'assistant', text: assistantText, sql: sqlOps, files, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
                         } else {
                             setMessages(prev => {
                                 const next = [...prev];
-                                next[next.length - 1] = { ...next[next.length - 1], text: assistantText, sql: sqlOps };
+                                next[next.length - 1] = { ...next[next.length - 1], text: assistantText, sql: sqlOps, files };
                                 return next;
                             });
                         }
@@ -408,7 +451,7 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                             return (
                                 <div key={i} className="message-row message-row-assistant">
                                     <img src={assistantProfilePic} alt="AI" className="profile-pic" />
-                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} timestamp={m.timestamp} />
+                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} files={m.files} timestamp={m.timestamp} />
                                 </div>
                             );
                         }

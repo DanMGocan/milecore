@@ -1,9 +1,13 @@
+import io
 import json
+import re
 import time
+import uuid
 from datetime import date
 from typing import Any, Generator
 
 import anthropic
+from openpyxl import Workbook
 
 from backend.config import (
     ANTHROPIC_API_KEY,
@@ -15,6 +19,30 @@ from backend.config import (
 from backend.database import execute_query, get_home_site, get_schema_ddl, validate_query
 from backend.email_sender import send_email as smtp_send_email
 from backend.prompts import SYSTEM_TEMPLATE, TOOLS
+
+_TABLE_RE = re.compile(
+    r"(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|INTO)\s+(\w+)",
+    re.IGNORECASE,
+)
+
+_OP_KEYWORDS = {"INSERT", "UPDATE", "DELETE"}
+
+
+def _find_matching_rule(sql: str, rules: list[dict]) -> dict | None:
+    """Return the first approval rule whose description matches the SQL, or None."""
+    sql_upper = sql.strip().upper()
+    op = next((kw for kw in _OP_KEYWORDS if sql_upper.startswith(kw)), None)
+    m = _TABLE_RE.search(sql)
+    table = m.group(1).lower() if m else None
+
+    for rule in rules:
+        desc = rule["description"].upper()
+        op_match = op and op in desc
+        table_match = table and table.upper() in desc
+        if op_match and table_match:
+            return rule
+    return None
+
 
 _primary_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 _spare_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY_SPARE) if ANTHROPIC_API_KEY_SPARE else None
@@ -33,6 +61,14 @@ def _swap_to_spare() -> bool:
         print("[claude_client] Switched to spare API key")
         return True
     return False
+
+# In-memory store for generated files: {file_id: (filename, bytes)}
+_generated_files: dict[str, tuple[str, bytes]] = {}
+
+
+def get_generated_file(file_id: str) -> tuple[str, bytes] | None:
+    return _generated_files.get(file_id)
+
 
 # Schema DDL cache — cleared when tables are created/dropped
 _schema_cache: str | None = None
@@ -188,18 +224,23 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             is_data_write = sql_upper.startswith(("INSERT", "UPDATE", "DELETE"))
             if is_data_write and tool_name == "execute_sql":
                 rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
-                if rules.get("rows"):
+                matched_rule = _find_matching_rule(sql, rules.get("rows") or [])
+                if matched_rule:
                     validation = validate_query(sql)
                     if not validation.get("valid"):
                         result = {"error": f"SQL validation failed: {validation['error']}"}
                     else:
-                        first_rule = rules["rows"][0]
-                        result = execute_query(
+                        ins = execute_query(
                             "INSERT INTO pending_approvals (sql_statement, explanation, matched_rule_id, matched_rule_description) VALUES (?, ?, ?, ?)",
-                            [sql, explanation, first_rule["id"], first_rule["description"]],
+                            [sql, explanation, matched_rule["id"], matched_rule["description"]],
                         )
-                        result["queued"] = True
-                        result["approval_id"] = result.get("lastrowid")
+                        result = {
+                            "queued": True,
+                            "executed": False,
+                            "approval_id": ins.get("lastrowid"),
+                            "matched_rule": matched_rule["description"],
+                            "message": "This query was NOT executed. It has been queued for admin approval because it matched an active approval rule. Tell the user their request is pending approval.",
+                        }
                     sql_log.append({"tool": tool_name, "sql": sql, "explanation": explanation, "result": result})
                     tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
                     continue
@@ -261,12 +302,17 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             if not validation.get("valid"):
                 result = {"error": f"SQL validation failed: {validation['error']}"}
             else:
-                result = execute_query(
+                ins = execute_query(
                     "INSERT INTO pending_approvals (sql_statement, explanation, matched_rule_id, matched_rule_description) VALUES (?, ?, ?, ?)",
                     [inp["sql"], inp["explanation"], inp["matched_rule_id"], inp["matched_rule_description"]],
                 )
-                result["queued"] = True
-                result["approval_id"] = result.get("lastrowid")
+                result = {
+                    "queued": True,
+                    "executed": False,
+                    "approval_id": ins.get("lastrowid"),
+                    "matched_rule": inp["matched_rule_description"],
+                    "message": "This query was NOT executed. It has been queued for admin approval because it matched an active approval rule. Tell the user their request is pending approval.",
+                }
 
             sql_log.append({"tool": tool_name, "action": "queued", "result": result})
             tool_results.append({
@@ -339,21 +385,22 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 else:
                     # Validation passed — remove staged file so it can't be re-imported
                     remove_staged_file(inp["file_id"])
-                    # Check if any approval rules are active
+                    # Check if any approval rules match this import
                     rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
-                    if rules.get("rows"):
-                        # Approval rules exist — queue for approval
-                        first_rule = rules["rows"][0]
+                    matched_rule = _find_matching_rule(gen["sql"], rules.get("rows") or [])
+                    if matched_rule:
                         approval_result = execute_query(
                             "INSERT INTO pending_approvals (sql_statement, explanation, matched_rule_id, matched_rule_description) VALUES (?, ?, ?, ?)",
                             [gen["sql"], inp.get("explanation", f"CSV import: {gen['total_rows']} rows into {gen['table']}"),
-                             first_rule["id"], first_rule["description"]],
+                             matched_rule["id"], matched_rule["description"]],
                         )
                         result = {
                             "queued": True,
+                            "executed": False,
                             "approval_id": approval_result.get("lastrowid"),
+                            "matched_rule": matched_rule["description"],
                             "total_rows": gen["total_rows"],
-                            "message": f"Import of {gen['total_rows']} rows into {gen['table']} queued for approval",
+                            "message": f"This import was NOT executed. Import of {gen['total_rows']} rows into {gen['table']} has been queued for admin approval. Tell the user their request is pending approval.",
                         }
                     else:
                         # No rules — execute directly
@@ -388,6 +435,67 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 "result": result,
             })
 
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block["id"],
+                "content": json.dumps(result),
+            })
+
+        elif tool_name == "generate_excel":
+            inp = block["input"]
+            filename = inp["filename"].strip()
+            if not filename.endswith(".xlsx"):
+                filename = filename + ".xlsx"
+            sheets = inp.get("sheets", [])
+
+            # Validate all queries are SELECT
+            invalid = [s for s in sheets if not s["sql"].strip().upper().startswith("SELECT")]
+            if invalid:
+                result = {"error": "Only SELECT queries are allowed in generate_excel."}
+            else:
+                wb = Workbook()
+                wb.remove(wb.active)
+                sheet_summaries = []
+                error = None
+
+                for sheet_def in sheets:
+                    query_result = execute_query(sheet_def["sql"])
+                    if "error" in query_result:
+                        error = query_result["error"]
+                        break
+                    ws = wb.create_sheet(title=sheet_def["name"][:31])
+                    rows = query_result.get("rows", [])
+                    if rows:
+                        headers = list(rows[0].keys())
+                        ws.append(headers)
+                        for row in rows:
+                            ws.append([row.get(h) for h in headers])
+                    else:
+                        ws.append(["No data"])
+                    sheet_summaries.append({"name": sheet_def["name"], "row_count": len(rows)})
+
+                if error:
+                    result = {"error": error}
+                else:
+                    buf = io.BytesIO()
+                    wb.save(buf)
+                    file_bytes = buf.getvalue()
+                    file_id = str(uuid.uuid4())
+                    _generated_files[file_id] = (filename, file_bytes)
+                    download_url = f"/api/downloads/{file_id}"
+                    result = {
+                        "success": True,
+                        "file_id": file_id,
+                        "filename": filename,
+                        "download_url": download_url,
+                        "sheets": sheet_summaries,
+                    }
+
+            sql_log.append({
+                "tool": "generate_excel",
+                "filename": filename,
+                "result": result,
+            })
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
@@ -441,9 +549,12 @@ def chat_stream(
 
         if response.stop_reason == "tool_use":
             tool_results = _execute_tools(assistant_content, sql_log, user_role)
-            # Notify frontend about each SQL operation
+            # Notify frontend about each SQL/file operation
             for entry in sql_log[len(sql_log) - len(tool_results):]:
-                yield f"event: sql\ndata: {json.dumps(entry)}\n\n"
+                if entry.get("tool") == "generate_excel":
+                    yield f"event: file\ndata: {json.dumps(entry)}\n\n"
+                else:
+                    yield f"event: sql\ndata: {json.dumps(entry)}\n\n"
             messages.append({"role": "user", "content": tool_results})
 
 

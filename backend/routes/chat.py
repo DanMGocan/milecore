@@ -1,3 +1,4 @@
+import io
 import json
 
 from fastapi import APIRouter, HTTPException, Query
@@ -5,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend import sessions
-from backend.claude_client import chat, chat_stream
+from backend.claude_client import chat, chat_stream, get_generated_file
 from backend.database import execute_query, get_home_site
 
 router = APIRouter()
@@ -152,6 +153,19 @@ async def chat_endpoint(req: ChatRequest):
         response=result["response"],
         session_id=session_id,
         sql_executed=result["sql_executed"],
+    )
+
+
+@router.get("/downloads/{file_id}")
+async def download_generated_file(file_id: str):
+    file_data = get_generated_file(file_id)
+    if not file_data:
+        raise HTTPException(status_code=404, detail="File not found or expired")
+    filename, content = file_data
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

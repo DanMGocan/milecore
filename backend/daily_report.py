@@ -1,9 +1,32 @@
 """Daily site operations report — sent to site supervisors each morning."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from backend.database import get_connection, _lock
 from backend.email_sender import send_email
+
+
+def _get_last_report_time() -> str:
+    """Return ISO timestamp of last report, or yesterday if never sent."""
+    rows = _query_rows(
+        "SELECT value FROM app_settings WHERE key = 'last_daily_report_at'"
+    )
+    if rows:
+        return rows[0]["value"]
+    return (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+
+def _set_last_report_time() -> None:
+    """Upsert current UTC time as last report timestamp."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    with _lock:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('last_daily_report_at', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [now],
+        )
+        conn.commit()
 
 
 def _query_rows(sql: str, params: list | None = None) -> list[dict]:
@@ -43,22 +66,22 @@ def _vendor_visits_today(site_id: int) -> list[dict]:
     )
 
 
-def _important_yesterday(site_id: int) -> list[dict]:
+def _important_since(site_id: int, since: str) -> list[dict]:
     queries = [
-        ("Issue", "SELECT id, title, created_at FROM technical_issues WHERE important=1 AND DATE(created_at)=DATE('now','-1 day') AND site_id=?"),
-        ("Request", "SELECT id, title, opened_at as created_at FROM requests WHERE important=1 AND DATE(opened_at)=DATE('now','-1 day') AND site_id=?"),
-        ("Event", "SELECT id, title, created_at FROM events WHERE important=1 AND DATE(created_at)=DATE('now','-1 day') AND site_id=?"),
-        ("Note", "SELECT id, title, created_at FROM notes WHERE important=1 AND DATE(created_at)=DATE('now','-1 day') AND site_id=?"),
-        ("Change", "SELECT id, title, created_at FROM changes WHERE important=1 AND DATE(created_at)=DATE('now','-1 day') AND site_id=?"),
+        ("Issue", "SELECT id, title, created_at FROM technical_issues WHERE important=1 AND created_at > ? AND site_id=?"),
+        ("Request", "SELECT id, title, opened_at as created_at FROM requests WHERE important=1 AND opened_at > ? AND site_id=?"),
+        ("Event", "SELECT id, title, created_at FROM events WHERE important=1 AND created_at > ? AND site_id=?"),
+        ("Note", "SELECT id, title, created_at FROM notes WHERE important=1 AND created_at > ? AND site_id=?"),
+        ("Change", "SELECT id, title, created_at FROM changes WHERE important=1 AND created_at > ? AND site_id=?"),
     ]
     items = []
     for label, sql in queries:
-        for row in _query_rows(sql, [site_id]):
+        for row in _query_rows(sql, [since, site_id]):
             items.append({"type": label, "id": row["id"], "title": row.get("title", "—")})
     return items
 
 
-def _format_report(site_name: str, issues: list, visits: list, important: list) -> str:
+def _format_report(site_name: str, issues: list, visits: list, important: list, since_date: str) -> str:
     today = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     lines = [
@@ -88,14 +111,14 @@ def _format_report(site_name: str, issues: list, visits: list, important: list) 
 
     lines += [
         "",
-        f"FLAGGED AS IMPORTANT ({yesterday})",
+        f"FLAGGED AS IMPORTANT (since {since_date})",
         "-" * 30,
     ]
     if important:
         for item in important:
             lines.append(f"  - [{item['type']} #{item['id']}] {item['title']}")
     else:
-        lines.append("  No items flagged as important yesterday.")
+        lines.append("  No items flagged as important since last report.")
 
     return "\n".join(lines)
 
@@ -103,7 +126,10 @@ def _format_report(site_name: str, issues: list, visits: list, important: list) 
 def generate_and_send_daily_reports() -> list[dict]:
     """Generate and send reports to all site supervisors. Returns send results."""
     supervisors = _get_supervisors()
+    since = _get_last_report_time()
+    since_date = since[:10]
     results = []
+    any_sent = False
 
     for sup in supervisors:
         site_id = sup.get("site_id")
@@ -113,9 +139,9 @@ def generate_and_send_daily_reports() -> list[dict]:
         site_name = _get_site_name(site_id)
         issues = _new_issues(site_id)
         visits = _vendor_visits_today(site_id)
-        important = _important_yesterday(site_id)
+        important = _important_since(site_id, since)
 
-        body = _format_report(site_name, issues, visits, important)
+        body = _format_report(site_name, issues, visits, important, since_date)
         to_name = f"{sup['first_name']} {sup['last_name']}"
         subject = f"Daily Site Report — {site_name} — {date.today().isoformat()}"
 
@@ -125,6 +151,11 @@ def generate_and_send_daily_reports() -> list[dict]:
             body=body,
             to_name=to_name,
         )
+        if result.get("success"):
+            any_sent = True
         results.append({"supervisor": to_name, "email": sup["email"], **result})
+
+    if any_sent:
+        _set_last_report_time()
 
     return results
