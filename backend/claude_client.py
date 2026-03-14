@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import date
 from typing import Any, Generator
 
@@ -78,15 +79,23 @@ def _build_user_role_section(user_role: str) -> str:
     )
 
 
+_prompt_cache: dict = {"approval": None, "home_site": None, "ts": 0}
+
+
 def _build_system_prompt(user_role: str = "admin") -> str:
+    now = time.time()
+    if now - _prompt_cache["ts"] > 60:
+        _prompt_cache["approval"] = _build_approval_section()
+        _prompt_cache["home_site"] = _build_home_site_section()
+        _prompt_cache["ts"] = now
     return SYSTEM_TEMPLATE.format(
         schema_ddl=_get_cached_schema(),
         today=date.today().isoformat(),
         sender_name=BREVO_SENDER_NAME,
         sender_email=BREVO_SENDER_EMAIL,
-        home_site_section=_build_home_site_section(),
+        home_site_section=_prompt_cache["home_site"],
         user_role_section=_build_user_role_section(user_role),
-        approval_section=_build_approval_section(),
+        approval_section=_prompt_cache["approval"],
     )
 
 
@@ -355,7 +364,7 @@ def chat_stream(user_message: str, history: list[dict[str, Any]], state: dict[st
         with client.messages.stream(
             model=CLAUDE_MODEL,
             max_tokens=4096,
-            system=system_prompt,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             tools=TOOLS,
             messages=messages,
         ) as stream:
@@ -389,7 +398,7 @@ def chat(user_message: str, history: list[dict[str, Any]], user_role: str = "adm
         response = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=4096,
-            system=system_prompt,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             tools=TOOLS,
             messages=messages,
         )

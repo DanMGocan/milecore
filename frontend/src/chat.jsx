@@ -114,6 +114,7 @@ export function ChatPage({ personId = 1 }) {
     const [badgeIndex, setBadgeIndex] = useState(0);
     const messagesEnd = useRef(null);
     const fileRef = useRef(null);
+    const streamRafRef = useRef(null);
     const [pics] = useState(() => {
         const indices = [0, 1, 2];
         const aiIdx = indices[Math.floor(Math.random() * 3)];
@@ -255,21 +256,30 @@ export function ChatPage({ personId = 1 }) {
                             setMessages(prev => [...prev, { role: 'assistant', text: '', sql: [], timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
                         }
                         assistantText += data.text;
-                        setMessages(prev => {
-                            const next = [...prev];
-                            next[next.length - 1] = { ...next[next.length - 1], text: assistantText };
-                            return next;
-                        });
+                        if (!streamRafRef.current) {
+                            streamRafRef.current = requestAnimationFrame(() => {
+                                setMessages(prev => {
+                                    const next = [...prev];
+                                    next[next.length - 1] = { ...next[next.length - 1], text: assistantText };
+                                    return next;
+                                });
+                                streamRafRef.current = null;
+                            });
+                        }
                     } else if (eventType === 'sql') {
                         sqlOps.push(data);
                     } else if (eventType === 'done') {
+                        if (streamRafRef.current) {
+                            cancelAnimationFrame(streamRafRef.current);
+                            streamRafRef.current = null;
+                        }
                         if (!started) {
                             setLoading(false);
                             setMessages(prev => [...prev, { role: 'assistant', text: assistantText, sql: sqlOps, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
                         } else {
                             setMessages(prev => {
                                 const next = [...prev];
-                                next[next.length - 1] = { ...next[next.length - 1], sql: sqlOps };
+                                next[next.length - 1] = { ...next[next.length - 1], text: assistantText, sql: sqlOps };
                                 return next;
                             });
                         }

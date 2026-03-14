@@ -36,28 +36,23 @@ def _count(sql: str) -> int:
 
 @router.get("/overview")
 async def overview():
-    return {
-        "active_assets": _count("SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'active'"),
-        "open_requests": _count("SELECT COUNT(*) FROM requests WHERE status IN ('open', 'in_progress')"),
-        "open_issues": _count("SELECT COUNT(*) FROM technical_issues WHERE resolution IS NULL"),
-        "events_this_week": _count(
-            "SELECT COUNT(*) FROM events "
-            "WHERE DATE(start_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', '+7 days')"
-        ),
-        "important_items": _count(
-            "SELECT ("
-            "(SELECT COUNT(*) FROM technical_issues WHERE important=1) + "
-            "(SELECT COUNT(*) FROM requests WHERE important=1) + "
-            "(SELECT COUNT(*) FROM events WHERE important=1) + "
-            "(SELECT COUNT(*) FROM notes WHERE important=1) + "
-            "(SELECT COUNT(*) FROM changes WHERE important=1) + "
-            "(SELECT COUNT(*) FROM work_logs WHERE important=1) + "
-            "(SELECT COUNT(*) FROM assets WHERE important=1) + "
-            "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1)"
-            ")"
-        ),
-        "last_push": _get_last_push(),
-    }
+    row = _query(
+        "SELECT "
+        "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'active') AS active_assets, "
+        "(SELECT COUNT(*) FROM requests WHERE status IN ('open', 'in_progress')) AS open_requests, "
+        "(SELECT COUNT(*) FROM technical_issues WHERE resolution IS NULL) AS open_issues, "
+        "(SELECT COUNT(*) FROM events WHERE DATE(start_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', '+7 days')) AS events_this_week, "
+        "(SELECT COUNT(*) FROM technical_issues WHERE important=1) + "
+        "(SELECT COUNT(*) FROM requests WHERE important=1) + "
+        "(SELECT COUNT(*) FROM events WHERE important=1) + "
+        "(SELECT COUNT(*) FROM notes WHERE important=1) + "
+        "(SELECT COUNT(*) FROM changes WHERE important=1) + "
+        "(SELECT COUNT(*) FROM work_logs WHERE important=1) + "
+        "(SELECT COUNT(*) FROM assets WHERE important=1) + "
+        "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1) AS important_items"
+    )[0]
+    row["last_push"] = _get_last_push()
+    return row
 
 
 @router.get("/assets-by-period")

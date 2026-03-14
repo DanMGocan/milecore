@@ -201,6 +201,7 @@ TOOLS = [
             },
             "required": ["action"],
         },
+        "cache_control": {"type": "ephemeral"},
     },
 ]
 

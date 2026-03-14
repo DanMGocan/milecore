@@ -76,16 +76,16 @@ async def get_session_endpoint(session_id: str):
 async def chat_stream_endpoint(req: ChatRequest):
     session_id = req.session_id
     person_id = req.person_id
-    if not session_id or sessions.get_session(session_id) is None:
+    history = sessions.get_session(session_id) if session_id else None
+    if history is None:
         session_id = sessions.create_session(person_id)
+        history = []
 
     # Look up user role
     user_result = execute_query(
         "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id]
     )
     user_role = user_result["rows"][0]["user_role"] if user_result.get("rows") else "user"
-
-    history = sessions.get_session(session_id) or []
     state = {}
 
     def generate():
@@ -101,16 +101,16 @@ async def chat_stream_endpoint(req: ChatRequest):
 async def chat_endpoint(req: ChatRequest):
     session_id = req.session_id
     person_id = req.person_id
-    if not session_id or sessions.get_session(session_id) is None:
+    history = sessions.get_session(session_id) if session_id else None
+    if history is None:
         session_id = sessions.create_session(person_id)
+        history = []
 
     # Look up user role
     user_result = execute_query(
         "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id]
     )
     user_role = user_result["rows"][0]["user_role"] if user_result.get("rows") else "user"
-
-    history = sessions.get_session(session_id) or []
     result = chat(req.message, history, user_role)
     sessions.save_history(session_id, result["history"])
 

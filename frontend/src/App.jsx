@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
-import { ChatPage } from './chat';
 import { Modal } from './components';
 import logo from '../static/img/milecore_logo.avif';
 
+const ChatPage = lazy(() => import('./chat').then(m => ({ default: m.ChatPage })));
 const BrowserPage = lazy(() => import('./browser').then(m => ({ default: m.BrowserPage })));
 const DashboardPage = lazy(() => import('./dashboard').then(m => ({ default: m.DashboardPage })));
 
