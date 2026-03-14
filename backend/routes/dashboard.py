@@ -3,7 +3,10 @@ import os
 
 from fastapi import APIRouter
 
+from backend.claude_client import clear_prompt_cache, clear_schema_cache
 from backend.config import SCHEMA_PATH
+from backend.database import _lock, get_connection, reset_db
+from initial_seed import seed_initial_data
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,7 +18,6 @@ def _get_last_push() -> str | None:
             return json.load(f).get("timestamp")
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return None
-from backend.database import get_connection, _lock, reset_db
 
 router = APIRouter(prefix="/dashboard")
 
@@ -98,10 +100,64 @@ async def staff_per_site():
     return {"data": data}
 
 
+@router.post("/seed-demo")
+async def seed_demo():
+    """Seed the database with demo data from the xlsx file."""
+    import openpyxl
+
+    xlsx_path = os.path.join(_PROJECT_ROOT, "dummy_files", "demo_full_import.xlsx")
+    if not os.path.exists(xlsx_path):
+        return {"ok": False, "error": "Demo data file not found"}
+
+    try:
+        wb = openpyxl.load_workbook(xlsx_path)
+        conn = get_connection()
+
+        # Insert order respects FK constraints
+        sheet_order = [
+            "companies", "sites", "rooms", "people", "assets",
+            "requests", "technical_issues", "events", "inventory_items",
+        ]
+
+        total_inserted = 0
+
+        with _lock:
+            for table_name in sheet_order:
+                if table_name not in wb.sheetnames:
+                    continue
+                ws = wb[table_name]
+                headers = [cell.value for cell in ws[1]]
+                if not headers:
+                    continue
+
+                cols = ", ".join(headers)
+                placeholders = ", ".join(["?"] * len(headers))
+
+                for row_idx in range(2, ws.max_row + 1):
+                    values = [cell.value for cell in ws[row_idx]]
+                    conn.execute(
+                        f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})",
+                        values,
+                    )
+                    total_inserted += 1
+
+            conn.commit()
+
+        clear_schema_cache()
+        clear_prompt_cache()
+
+        return {"ok": True, "total_inserted": total_inserted}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @router.post("/reset-database")
 async def reset_database():
     try:
         reset_db(SCHEMA_PATH)
+        seed_initial_data()
+        clear_schema_cache()
+        clear_prompt_cache()
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}

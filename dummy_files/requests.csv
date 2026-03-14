@@ -1,13 +1,13 @@
 request_number,requester_person_id,site_id,room_id,asset_id,request_type,title,description,priority,status,source,assigned_person_id,opened_at,resolved_at,closed_at,important
-REQ-001,8,1,3,2,incident,Laptop touchpad not responding,"User reports touchpad freezes intermittently on Dell Latitude 7430, requires hard reboot to recover",high,open,email,2,2026-03-10 09:15:00,,,1
-REQ-002,10,2,7,,service_request,New monitor for hot desk,"Sales team needs additional 27-inch monitor for shared hot desk area in Austin bullpen",low,open,chat,5,2026-03-11 14:30:00,,,0
-REQ-003,6,3,9,,service_request,Boardroom AV setup for client visit,"Need projector and video conferencing tested before Thursday client presentation",high,in_progress,walk_up,7,2026-03-12 08:00:00,,,1
-REQ-004,3,1,1,9,incident,Core switch port flapping,"Ports 12-14 on Catalyst 9300 showing intermittent link flaps, affecting VoIP traffic",critical,in_progress,monitoring,3,2026-03-09 16:45:00,,,1
-REQ-005,9,1,3,,service_request,Ergonomic keyboard request,"HR coordinator requests split ergonomic keyboard for RSI prevention",medium,open,email,2,2026-03-12 10:00:00,,,0
-REQ-006,4,2,5,,incident,Server closet temperature alert,"Environmental sensor reports temp above 28°C in Austin server closet",high,resolved,monitoring,4,2026-03-08 22:10:00,2026-03-09 06:30:00,,0
-REQ-007,11,3,10,13,incident,Printer paper jam recurring,"HP LaserJet in London hot desk area jams every 20-30 pages, tray 2 suspected",medium,open,walk_up,7,2026-03-11 11:20:00,,,0
-REQ-008,2,1,3,3,service_request,macOS Sonoma update assistance,"Network engineer needs help updating MacBook Pro to latest macOS patch",low,resolved,chat,2,2026-03-07 13:00:00,2026-03-07 14:30:00,2026-03-07 14:30:00,0
-REQ-009,5,2,7,5,incident,Laptop won't connect to dock,"HP EliteBook 840 not detecting external displays through USB-C dock",medium,open,email,4,2026-03-13 08:45:00,,,0
-REQ-010,8,1,3,1,service_request,Laptop battery replacement,"Dell Latitude 7430 battery only lasting ~2 hours, needs replacement",medium,resolved,email,2,2026-03-05 09:00:00,2026-03-06 16:00:00,2026-03-06 16:00:00,0
-REQ-011,6,3,8,,change_request,London comms room cable management,"Patch panel cables need re-labeling and tidying, planned for weekend",low,planned,email,6,2026-03-10 15:00:00,,,0
-REQ-012,1,1,1,,change_request,UPS firmware upgrade — Dublin server room,"Scheduled UPS firmware update, 15-min switchover to bypass required",high,planned,email,3,2026-03-13 10:00:00,,,1
+REQ-001,10,1,3,2,incident,Laptop touchpad not responding,"User reports touchpad freezes intermittently on Dell Latitude 7430, requires hard reboot to recover",high,open,email,4,2026-03-10 09:15:00,,,1
+REQ-002,12,2,7,,service_request,New monitor for hot desk,"Sales team needs additional 27-inch monitor for shared hot desk area in Austin bullpen",low,open,chat,7,2026-03-11 14:30:00,,,0
+REQ-003,8,3,9,,service_request,Boardroom AV setup for client visit,"Need projector and video conferencing tested before Thursday client presentation",high,in_progress,walk_up,9,2026-03-12 08:00:00,,,1
+REQ-004,5,1,1,9,incident,Core switch port flapping,"Ports 12-14 on Catalyst 9300 showing intermittent link flaps, affecting VoIP traffic",critical,in_progress,monitoring,5,2026-03-09 16:45:00,,,1
+REQ-005,11,1,3,,service_request,Ergonomic keyboard request,"HR coordinator requests split ergonomic keyboard for RSI prevention",medium,open,email,4,2026-03-12 10:00:00,,,0
+REQ-006,6,2,5,,incident,Server closet temperature alert,"Environmental sensor reports temp above 28°C in Austin server closet",high,resolved,monitoring,6,2026-03-08 22:10:00,2026-03-09 06:30:00,,0
+REQ-007,13,3,10,13,incident,Printer paper jam recurring,"HP LaserJet in London hot desk area jams every 20-30 pages, tray 2 suspected",medium,open,walk_up,9,2026-03-11 11:20:00,,,0
+REQ-008,4,1,3,3,service_request,macOS Sonoma update assistance,"Network engineer needs help updating MacBook Pro to latest macOS patch",low,resolved,chat,4,2026-03-07 13:00:00,2026-03-07 14:30:00,2026-03-07 14:30:00,0
+REQ-009,7,2,7,5,incident,Laptop won't connect to dock,"HP EliteBook 840 not detecting external displays through USB-C dock",medium,open,email,6,2026-03-13 08:45:00,,,0
+REQ-010,10,1,3,1,service_request,Laptop battery replacement,"Dell Latitude 7430 battery only lasting ~2 hours, needs replacement",medium,resolved,email,4,2026-03-05 09:00:00,2026-03-06 16:00:00,2026-03-06 16:00:00,0
+REQ-011,8,3,8,,change_request,London comms room cable management,"Patch panel cables need re-labeling and tidying, planned for weekend",low,planned,email,8,2026-03-10 15:00:00,,,0
+REQ-012,3,1,1,,change_request,UPS firmware upgrade — Dublin server room,"Scheduled UPS firmware update, 15-min switchover to bypass required",high,planned,email,5,2026-03-13 10:00:00,,,1

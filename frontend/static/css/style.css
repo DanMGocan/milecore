@@ -151,6 +151,12 @@ body {
     gap: 2px;
 }
 
+.nav-actions {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+}
+
 .nav-link {
     padding: 6px 14px;
     background: transparent;
@@ -218,21 +224,28 @@ body {
 
 .demo-banner {
     text-align: center;
-    padding: 8px 16px;
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto 12px;
+    padding: 10px 16px;
     font-size: 13px;
     color: var(--accent);
     background: var(--accent-dim);
-    border-bottom: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: background var(--transition-fast);
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+    font-family: var(--font-sans);
 }
 
 .demo-banner:hover {
     background: var(--bg-hover);
+    border-color: rgba(108, 140, 255, 0.45);
 }
 
 .app-content {
-    height: calc(100vh - 85px);
+    height: calc(100vh - 52px);
 }
 
 /* === Skeleton Loading Fallback === */
@@ -318,10 +331,74 @@ body {
     gap: 12px;
 }
 
-.sidebar-user .nav-username,
 .sidebar-user .btn {
     padding: 10px 8px;
     text-align: center;
+}
+
+.sidebar-user-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.sidebar-user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 2px solid var(--border);
+}
+
+.sidebar-user-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.sidebar-user-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.sidebar-user-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-user-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-user-star {
+    width: 14px;
+    height: 14px;
+    color: var(--warning);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.sidebar-user-star svg {
+    width: 100%;
+    height: 100%;
 }
 
 .sidebar-user-row {
@@ -413,9 +490,9 @@ body {
 .capability-badges-row {
     display: flex;
     gap: 12px;
-    margin-top: 20px;
     flex-wrap: wrap;
     justify-content: center;
+    width: 100%;
 }
 
 .capability-badges-row .capability-badge {
@@ -619,13 +696,37 @@ body {
 
 /* Empty State (centered logo) */
 .empty-state {
+    position: relative;
+    flex: 1;
+    min-height: 360px;
+    height: 100%;
+    color: var(--text-muted);
+}
+
+.empty-state-hero {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--text-muted);
     gap: 4px;
+    width: min(100%, 640px);
+    text-align: center;
+    pointer-events: none;
+}
+
+.empty-state-badge-slot {
+    position: absolute;
+    top: calc(50% + 112px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    width: min(calc(100% - 32px), 640px);
+    min-height: 72px;
 }
 
 .empty-state-logo {
@@ -665,9 +766,29 @@ body {
     letter-spacing: -0.5px;
 }
 
+.empty-state-brand-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+}
+
+.empty-state-divider {
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+}
+
+.empty-state-motto {
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+}
+
 .empty-state-sub {
     font-size: 14px;
     color: var(--text-muted);
+    margin-top: 8px;
 }
 
 /* SQL Block */
@@ -1033,6 +1154,31 @@ body {
     animation: fadeIn 0.2s ease;
 }
 
+.browser-empty-state {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 32px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.browser-empty-state--full {
+    flex: 1;
+}
+
+.browser-empty-state svg {
+    width: 56px;
+    height: 56px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
 .empty-state-icon {
     font-size: 48px;
     opacity: 0.3;
@@ -1248,11 +1394,65 @@ body {
     color: var(--text-primary);
 }
 
+.modal p + p {
+    margin-top: 12px;
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 20px;
+}
+
+/* === Seed Demo === */
+.seed-link {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px dashed var(--accent);
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.seed-link:hover {
+    color: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.seed-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 32px 0;
+}
+.seed-loading p {
+    font-size: 15px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.seed-loading-sub {
+    font-size: 13px !important;
+    color: var(--text-secondary) !important;
+    font-weight: 400 !important;
+}
+
+.seed-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: seedSpin 0.8s linear infinite;
+}
+@keyframes seedSpin {
+    to { transform: rotate(360deg); }
+}
+
+.seed-success {
+    display: flex;
+    justify-content: center;
+    padding: 12px 0 4px;
 }
 
 /* === Forms === */
@@ -1804,6 +2004,16 @@ select.form-input {
     .doc-content {
         padding: 20px 16px;
     }
+
+    .empty-state {
+        min-height: 320px;
+    }
+
+    .empty-state-badge-slot {
+        top: calc(50% + 108px);
+        width: min(calc(100% - 24px), 560px);
+        min-height: 88px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1826,5 +2036,15 @@ select.form-input {
     .profile-pic {
         width: 40px;
         height: 40px;
+    }
+
+    .empty-state-hero {
+        width: min(calc(100% - 24px), 420px);
+    }
+
+    .empty-state-badge-slot {
+        top: calc(50% + 104px);
+        width: min(calc(100% - 20px), 420px);
+        min-height: 104px;
     }
 }

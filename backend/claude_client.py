@@ -33,6 +33,12 @@ def clear_schema_cache() -> None:
     _schema_cache = None
 
 
+def clear_prompt_cache() -> None:
+    _prompt_cache["approval"] = None
+    _prompt_cache["home_site"] = None
+    _prompt_cache["ts"] = 0
+
+
 def _build_approval_section() -> str:
     rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
     count_result = execute_query("SELECT COUNT(*) as count FROM pending_approvals WHERE status = 'pending'")
@@ -53,11 +59,8 @@ def _build_home_site_section() -> str:
     if site is None:
         return (
             "HOME SITE:\n"
-            "No home site is configured yet. Your FIRST priority before anything else is to help the user set one.\n"
-            'Ask: "What site is this MileCore instance for? Give me the client name and city (e.g., Workday Dublin or Google Paris)."\n'
-            "When they answer, INSERT the client into companies (type='client'), then INSERT the site into sites (with client_id and city, and name as 'ClientName CityName'), "
-            "then INSERT into app_settings (key='home_site_id', value=the new site's id).\n"
-            "Do NOT process any other requests until the home site is set."
+            "No home site is configured in app_settings. This should not happen in normal startup because bootstrap seeding sets one.\n"
+            "Do not ask the user to configure a home site. Continue normally and prefer explicit site mentions from the user when needed."
         )
     return (
         "HOME SITE:\n"
@@ -79,10 +82,35 @@ def _build_user_role_section(user_role: str) -> str:
     )
 
 
+def _build_current_user_section(current_user: dict[str, Any] | None) -> str:
+    if not current_user:
+        return (
+            "CURRENT USER:\n"
+            "No current user record was resolved for this request. Do not infer personal details."
+        )
+
+    lines = [
+        "CURRENT USER:",
+        f"- person_id: {current_user['person_id']}",
+        f"- name: {current_user['display_name']}",
+        f"- username: {current_user['username']}",
+        f"- role: {current_user['role']}",
+        f"- email: {current_user['email'] or 'not set'}",
+        f"- phone: {current_user['phone'] or 'not set'}",
+        f"- title: {current_user['role_title'] or 'not set'}",
+        f"- department: {current_user['department'] or 'not set'}",
+        f"- site_id: {current_user['site_id'] if current_user['site_id'] is not None else 'not set'}",
+        f"- site_name: {current_user['site_name'] or 'not set'}",
+        f"- team_id: {current_user['team_id'] if current_user['team_id'] is not None else 'not set'}",
+        f"- team_name: {current_user['team_name'] or 'not set'}",
+    ]
+    return "\n".join(lines)
+
+
 _prompt_cache: dict = {"approval": None, "home_site": None, "ts": 0}
 
 
-def _build_system_prompt(user_role: str = "admin") -> str:
+def _build_system_prompt(user_role: str = "admin", current_user: dict[str, Any] | None = None) -> str:
     now = time.time()
     if now - _prompt_cache["ts"] > 60:
         _prompt_cache["approval"] = _build_approval_section()
@@ -95,6 +123,7 @@ def _build_system_prompt(user_role: str = "admin") -> str:
         sender_email=BREVO_SENDER_EMAIL,
         home_site_section=_prompt_cache["home_site"],
         user_role_section=_build_user_role_section(user_role),
+        current_user_section=_build_current_user_section(current_user),
         approval_section=_prompt_cache["approval"],
     )
 
@@ -317,6 +346,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
 
             sql_log.append({
                 "tool": tool_name,
+                "sql": gen.get("sql", ""),
                 "explanation": inp.get("explanation", ""),
                 "result": result,
             })
@@ -350,13 +380,19 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
     return tool_results
 
 
-def chat_stream(user_message: str, history: list[dict[str, Any]], state: dict[str, Any], user_role: str = "admin") -> Generator[str, None, None]:
+def chat_stream(
+    user_message: str,
+    history: list[dict[str, Any]],
+    state: dict[str, Any],
+    user_role: str = "admin",
+    current_user: dict[str, Any] | None = None,
+) -> Generator[str, None, None]:
     """Stream a chat response as SSE events.
 
     Yields SSE-formatted strings (event: type\\ndata: json\\n\\n).
     Populates state["history"] with the updated message history when done.
     """
-    system_prompt = _build_system_prompt(user_role)
+    system_prompt = _build_system_prompt(user_role, current_user)
     messages = list(history) + [{"role": "user", "content": user_message}]
     sql_log: list[dict[str, Any]] = []
 
@@ -388,9 +424,14 @@ def chat_stream(user_message: str, history: list[dict[str, Any]], state: dict[st
             messages.append({"role": "user", "content": tool_results})
 
 
-def chat(user_message: str, history: list[dict[str, Any]], user_role: str = "admin") -> dict[str, Any]:
+def chat(
+    user_message: str,
+    history: list[dict[str, Any]],
+    user_role: str = "admin",
+    current_user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Non-streaming chat (kept as fallback)."""
-    system_prompt = _build_system_prompt(user_role)
+    system_prompt = _build_system_prompt(user_role, current_user)
     messages = list(history) + [{"role": "user", "content": user_message}]
     sql_log: list[dict[str, Any]] = []
 

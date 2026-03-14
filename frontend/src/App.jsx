@@ -26,6 +26,8 @@ export default function App() {
     });
     const [logoutModal, setLogoutModal] = useState(false);
     const [demoModal, setDemoModal] = useState(false);
+    const [seedLoading, setSeedLoading] = useState(false);
+    const [seedDone, setSeedDone] = useState(false);
     const [pendingCount, setPendingCount] = useState(0);
     const [personId, setPersonId] = useState(() => {
         const stored = localStorage.getItem('personId');
@@ -78,10 +80,29 @@ export default function App() {
         localStorage.setItem('personId', String(newId));
     };
 
-    const displayName = currentUser
-        ? `${currentUser.display_name} (${currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)})`
-        : '...';
     const switchLabel = personId === 1 ? 'Switch to Bob' : 'Switch to Dan';
+
+    const handleSeedDemo = async () => {
+        setSeedLoading(true);
+        try {
+            const res = await fetch('/api/dashboard/seed-demo', { method: 'POST' });
+            const data = await res.json();
+            if (data.ok) {
+                setSeedDone(true);
+            } else {
+                setSeedDone(false);
+                setSeedLoading(false);
+                alert('Failed to seed: ' + (data.error || 'Unknown error'));
+                return;
+            }
+        } catch (err) {
+            setSeedDone(false);
+            setSeedLoading(false);
+            alert('Failed to seed: ' + err.message);
+            return;
+        }
+        setSeedLoading(false);
+    };
 
     return (
         <div className="app">
@@ -90,15 +111,14 @@ export default function App() {
                     <button className={`nav-link${page === 'chat' ? ' active' : ''}`} onClick={() => setPage('chat')}>Chat{currentUser?.role === 'admin' && pendingCount > 0 && <span className="approval-badge">{pendingCount} pending approval{pendingCount === 1 ? '' : 's'}</span>}</button>
                     <button className={`nav-link${page === 'browser' ? ' active' : ''}`} onClick={() => setPage('browser')}>Database</button>
                     <button className={`nav-link${page === 'dashboard' ? ' active' : ''}`} onClick={() => setPage('dashboard')}>Dashboard</button>
+                </div>
+                <div className="nav-actions">
                     <button className={`nav-link${page === 'documentation' ? ' active' : ''}`} onClick={() => setPage('documentation')}>Docs</button>
                 </div>
             </nav>
-            <div className="demo-banner" onClick={() => setDemoModal(true)}>
-                Are you a Demo user, from the Milestone Hackathon? Please click me first!
-            </div>
             <div className="app-content">
                 <Suspense fallback={<SkeletonFallback />}>
-                    {page === 'chat' && <div className="page-enter"><ChatPage personId={personId} displayName={displayName} switchLabel={switchLabel} onSwitchUser={switchUser} /></div>}
+                    {page === 'chat' && <div className="page-enter"><ChatPage personId={personId} currentUser={currentUser} switchLabel={switchLabel} onSwitchUser={switchUser} onDemoBannerClick={() => setDemoModal(true)} /></div>}
                     {page === 'browser' && <div className="page-enter"><BrowserPage /></div>}
                     {page === 'dashboard' && <div className="page-enter"><DashboardPage currentUser={currentUser} /></div>}
                     {page === 'documentation' && <div className="page-enter"><DocumentationPage /></div>}
@@ -112,13 +132,38 @@ export default function App() {
                     <button className="btn btn-primary" onClick={() => setLogoutModal(false)}>OK, I'll stay</button>
                 </div>
             </Modal>
-            <Modal open={demoModal} onClose={() => setDemoModal(false)} title="Welcome, Hackathon Demo User!">
-                <p>MileCore is an AI-powered database assistant for IT site operations. Talk to it in plain English to manage assets, people, support requests, events, inventory, and more — it translates your words into database actions automatically.</p>
-                <p>This demo comes with a <strong>fully seeded database</strong> already loaded with sample data (people, assets, issues, events, etc.) so you can start exploring right away.</p>
-                <p>If you want a fresh start, go to the <strong>Dashboard</strong> page and click the red <strong>"Reset Database"</strong> button at the bottom to wipe all data and start from scratch.</p>
-                <div className="modal-actions">
-                    <button className="btn btn-primary" onClick={() => setDemoModal(false)}>Got it!</button>
-                </div>
+            <Modal open={demoModal} onClose={() => !seedLoading && setDemoModal(false)} title="Welcome, Hackathon Demo User!">
+                {seedLoading ? (
+                    <div className="seed-loading">
+                        <div className="seed-spinner" />
+                        <p>Seeding the database with demo data...</p>
+                        <p className="seed-loading-sub">This will only take a moment.</p>
+                    </div>
+                ) : seedDone ? (
+                    <>
+                        <div className="seed-success">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <p>Demo data has been loaded successfully! The database is now populated with sample companies, people, assets, requests, and more.</p>
+                        <p>You can always reset the database by going to the <strong>Dashboard</strong> page and clicking the red <strong>"Reset Database"</strong> button.</p>
+                        <div className="modal-actions">
+                            <button className="btn btn-primary" onClick={() => { setDemoModal(false); setSeedDone(false); }}>Let's go!</button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <p>MileCore is an AI-powered database assistant for IT site operations. Talk to it in plain English to manage assets, people, support requests, events, inventory, and more — it translates your words into database actions automatically.</p>
+                        <p>This demo does <strong>not</strong> come with data preloaded, except for two users: <strong>Dan</strong> (admin) and <strong>Bob</strong> (regular user).</p>
+                        <p>However, if you'd like to seed the database with dummy AI-generated entries, <a href="#" onClick={(e) => { e.preventDefault(); handleSeedDemo(); }} className="seed-link">click here</a>.</p>
+                        <p>You can always reset the database by going to the <strong>Dashboard</strong> page and clicking the red <strong>"Reset Database"</strong> button to wipe all data and start from scratch.</p>
+                        <div className="modal-actions">
+                            <button className="btn btn-primary" onClick={() => setDemoModal(false)}>Got it!</button>
+                        </div>
+                    </>
+                )}
             </Modal>
         </div>
     );

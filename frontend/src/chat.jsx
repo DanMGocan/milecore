@@ -16,6 +16,14 @@ function ThinkingDots() {
     );
 }
 
+function AdminStarIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2.75l2.85 5.77 6.37.93-4.61 4.49 1.09 6.35L12 17.3l-5.7 2.99 1.09-6.35-4.61-4.49 6.37-.93L12 2.75z" />
+        </svg>
+    );
+}
+
 function SqlBlock({ operations }) {
     const [open, setOpen] = useState(false);
     if (!operations || operations.length === 0) return null;
@@ -40,8 +48,8 @@ function SqlBlock({ operations }) {
                                 <div className="sql-explanation">{op.action}</div>
                             ) : (
                                 <>
-                                    {op.explanation && <div className="sql-explanation">{op.explanation}</div>}
-                                    <pre className="sql-query">{op.sql}</pre>
+                                    {(op.explanation || op.action) && <div className="sql-explanation">{op.explanation || op.action}</div>}
+                                    {op.sql && <pre className="sql-query">{op.sql}</pre>}
                                 </>
                             )}
                             {op.result && !op.result.error && (
@@ -101,7 +109,7 @@ const PROMPTS = [
     { text: 'Does the town hall in the canteen today need audio/video support?', color: '#f472b6' },
 ];
 
-export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser }) {
+export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser, onDemoBannerClick }) {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -114,13 +122,11 @@ export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser 
     const messagesEnd = useRef(null);
     const fileRef = useRef(null);
     const streamRafRef = useRef(null);
-    const [pics] = useState(() => {
-        const indices = [0, 1, 2];
-        const aiIdx = indices[Math.floor(Math.random() * 3)];
-        const remaining = indices.filter(i => i !== aiIdx);
-        const userIdx = remaining[Math.floor(Math.random() * remaining.length)];
-        return { ai: aiIdx, user: userIdx };
-    });
+    const userProfilePic = profilePics[personId % 2 === 0 ? 1 : 0];
+    const assistantProfilePic = profilePics[2];
+    const sidebarDisplayName = currentUser?.display_name || '...';
+    const sidebarJobTitle = currentUser?.job_title || '';
+    const isAdmin = currentUser?.role === 'admin';
 
     const loadSessions = () => {
         fetch(`/api/sessions?person_id=${personId}`).then(r => r.json()).then(d => setSessions(d.sessions || [])).catch(() => {});
@@ -134,18 +140,7 @@ export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser 
 
     useEffect(() => {
         loadSessions();
-        fetch('/api/home-site')
-            .then(res => res.json())
-            .then(data => {
-                if (!data.home_site) {
-                    setMessages([{
-                        role: 'assistant',
-                        text: "Welcome to MileCore! Before we get started, I need to know which site this instance is for. What's the client name and city? (e.g., **Workday Dublin** or **Google Paris**)",
-                    }]);
-                }
-                setHomeSiteChecked(true);
-            })
-            .catch(() => setHomeSiteChecked(true));
+        setHomeSiteChecked(true);
     }, []);
 
     useEffect(() => {
@@ -158,7 +153,7 @@ export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser 
         if (messages.length > 0) return;
         const id = setInterval(() => {
             setBadgeIndex(prev => (prev + 1) % PROMPTS.length);
-        }, 3000);
+        }, 5000);
         return () => clearInterval(id);
     }, [messages.length]);
 
@@ -338,7 +333,20 @@ export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser 
                     )}
                 </div>
                 <div className="sidebar-user">
-                    <span className="nav-username">{displayName}</span>
+                    <div className="sidebar-user-header">
+                        <img src={userProfilePic} alt={sidebarDisplayName} className="sidebar-user-avatar" />
+                        <div className="sidebar-user-meta">
+                            <div className="sidebar-user-name-row">
+                                <span className="sidebar-user-name">{sidebarDisplayName}</span>
+                                {sidebarJobTitle && <span className="sidebar-user-title">({sidebarJobTitle})</span>}
+                                {isAdmin && (
+                                    <span className="sidebar-user-star" title="Admin" aria-label="Admin">
+                                        <AdminStarIcon />
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
                     <div className="sidebar-user-row">
                         <button className="btn btn-sm" onClick={onSwitchUser}>{switchLabel}</button>
                         <button className="btn btn-sm" onClick={() => setSettingsOpen(true)} title="Settings">
@@ -354,13 +362,21 @@ export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser 
                 <div className="chat-messages">
                     {messages.length === 0 && homeSiteChecked && (
                         <div className="empty-state">
-                            <div className="empty-state-logo-wrap">
-                                <img src={logo} alt="Milestone Technologies" className="empty-state-logo" />
+                            <div className="empty-state-hero">
+                                <div className="empty-state-logo-wrap">
+                                    <img src={logo} alt="Milestone Technologies" className="empty-state-logo" />
+                                </div>
+                                <div className="empty-state-brand-row">
+                                    <div className="empty-state-brand">MileCore</div>
+                                    <span className="empty-state-divider" aria-hidden="true">|</span>
+                                    <div className="empty-state-motto">It simply works.</div>
+                                </div>
+                                <div className="empty-state-sub">Try asking...</div>
                             </div>
-                            <div className="empty-state-brand">MileCore</div>
-                            <div className="empty-state-sub">Try asking...</div>
-                            <div className="capability-badges-row" key={badgeIndex}>
-                                <span className="capability-badge" style={{ borderColor: prompt.color }}>{prompt.text}</span>
+                            <div className="empty-state-badge-slot">
+                                <div className="capability-badges-row" key={badgeIndex}>
+                                    <span className="capability-badge" style={{ borderColor: prompt.color }}>{prompt.text}</span>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -369,14 +385,14 @@ export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser 
                             return (
                                 <div key={i} className="message-row message-row-user">
                                     <ChatMessage role={m.role} text={m.text} sql={m.sql} file={m.file} timestamp={m.timestamp} />
-                                    <img src={profilePics[pics.user]} alt="You" className="profile-pic" />
+                                    <img src={userProfilePic} alt="You" className="profile-pic" />
                                 </div>
                             );
                         }
                         if (m.role === 'assistant') {
                             return (
                                 <div key={i} className="message-row message-row-assistant">
-                                    <img src={profilePics[pics.ai]} alt="AI" className="profile-pic" />
+                                    <img src={assistantProfilePic} alt="AI" className="profile-pic" />
                                     <ChatMessage role={m.role} text={m.text} sql={m.sql} timestamp={m.timestamp} />
                                 </div>
                             );
@@ -385,13 +401,16 @@ export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser 
                     })}
                     {loading && (
                         <div className="message-row message-row-assistant">
-                            <img src={profilePics[pics.ai]} alt="AI" className="profile-pic" />
+                            <img src={assistantProfilePic} alt="AI" className="profile-pic" />
                             <ChatMessage role="loading" />
                         </div>
                     )}
                     <div ref={messagesEnd} />
                 </div>
                 <div className="chat-input-container">
+                    <button className="demo-banner" onClick={onDemoBannerClick} type="button">
+                        Are you a Demo user, from the Milestone Hackathon? Please click me first!
+                    </button>
                     <div className="chat-input-card">
                         <div className="chat-input-wrapper">
                             <textarea

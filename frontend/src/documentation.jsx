@@ -17,6 +17,7 @@ const TOC = [
     { id: 'scope', label: 'Scope & Limitations' },
     { id: 'qa-testing', label: 'QA & Testing' },
     { id: 'roadmap', label: 'Roadmap' },
+    { id: 'cost-estimate', label: 'Cost Estimate' },
 ];
 
 export function DocumentationPage() {
@@ -86,6 +87,7 @@ export function DocumentationPage() {
                 <ScopeSection />
                 <QATestingSection />
                 <RoadmapSection />
+                <CostEstimateSection />
             </div>
         </div>
     );
@@ -107,10 +109,10 @@ function OverviewSection() {
             </ul>
             <h3>Getting Started</h3>
             <p>
-                When MileCore launches for the first time, it will prompt you to configure a <strong>home site</strong>. This is the client location this instance manages (e.g., "Workday Dublin" or "Google Paris"). All operations default to the home site unless you specify otherwise.
+                MileCore boots with a seeded default <strong>home site</strong>: <strong>Dublin HQ</strong>. All operations default to that site unless you explicitly specify another one.
             </p>
             <div className="doc-callout">
-                <strong>Home site setup is required.</strong> MileCore will not process other requests until a home site is configured. Simply type the client name and city when prompted.
+                <strong>Bootstrap seed:</strong> The initial company, home site, and demo users are restored automatically on first launch and after a database reset.
             </div>
             <h3>Core Workflow</h3>
             <p>MileCore is organized around the lifecycle of site operations:</p>
@@ -425,10 +427,10 @@ function DashboardSection() {
             <p>Admin users see additional buttons:</p>
             <ul>
                 <li><strong>Send Daily Report</strong> &mdash; manually triggers the daily report email to all supervisors</li>
-                <li><strong>Reset Database</strong> &mdash; re-initializes the database from schema (destroys all data)</li>
+                <li><strong>Reset Database</strong> &mdash; re-initializes the database and restores the default bootstrap seed (destroys all other data)</li>
             </ul>
             <div className="doc-callout doc-callout--warning">
-                <strong>Warning:</strong> Reset Database is destructive and cannot be undone. It drops all data and recreates tables from the schema definition.
+                <strong>Warning:</strong> Reset Database is destructive and cannot be undone. It drops all data, recreates tables, and restores the default seeded company, site, and users.
             </div>
         </section>
     );
@@ -637,7 +639,7 @@ function SchemaSection() {
         {
             title: 'People & Teams',
             tables: [
-                { name: 'people', desc: 'All persons (employees, contacts, vendor reps, app users)', cols: 'id, first_name, last_name, email, phone, job_title, employer_id, client_id, vendor_id, site_id, is_user, username, user_role, is_supervisor, team_role, notes' },
+                { name: 'people', desc: 'All persons (employees, contacts, vendor reps, app users)', cols: 'id, first_name, last_name, email, phone, role_title, employer_id, client_id, vendor_id, site_id, is_user, username, user_role, is_supervisor, team_role, notes' },
                 { name: 'teams', desc: 'Named groups', cols: 'id, name, site_id, team_type (support|av|operations|management), description' },
                 { name: 'pto', desc: 'Leave records', cols: 'id, person_id, leave_type (pto|sick|personal|bereavement|other), start_date, end_date, notes' },
             ]
@@ -812,19 +814,19 @@ function QATestingSection() {
                 <thead><tr><th>Test Case</th><th>Steps</th><th>Expected Result</th></tr></thead>
                 <tbody>
                     <tr>
-                        <td>Home site prompt on first launch</td>
+                        <td>Bootstrap seed on first launch</td>
                         <td>Start the app with a fresh database and open the chat page</td>
-                        <td>AI prompts you to configure a home site before accepting other requests</td>
+                        <td>The app loads normally with Dublin HQ as the default home site and no setup prompt</td>
                     </tr>
                     <tr>
-                        <td>Configure home site</td>
-                        <td>Type a client name and city (e.g., "Workday Dublin") when prompted</td>
-                        <td>AI confirms the home site is set; subsequent requests work normally</td>
+                        <td>No setup gate before chat</td>
+                        <td>On a fresh database, send a message like "Show all assets"</td>
+                        <td>The AI processes the request normally without asking you to configure a home site</td>
                     </tr>
                     <tr>
-                        <td>Blocks requests before setup</td>
-                        <td>On a fresh database, send a non-setup message like "Show all assets"</td>
-                        <td>AI redirects you to configure the home site first</td>
+                        <td>Reset restores bootstrap data</td>
+                        <td>Use Reset Database, then reopen the chat page</td>
+                        <td>The seeded users and Dublin HQ home site are present again immediately</td>
                     </tr>
                 </tbody>
             </table>
@@ -1168,6 +1170,239 @@ function RoadmapSection() {
                 <li><strong>Audit Log Viewer</strong> — UI for browsing the audit trail of all data changes</li>
                 <li><strong>Advanced Reporting</strong> — Scheduled report customization, custom queries, export options</li>
                 <li><strong>Role-Based Access Control</strong> — Granular permissions beyond the current admin/user split</li>
+            </ul>
+        </section>
+    );
+}
+
+function CostEstimateSection() {
+    return (
+        <section id="cost-estimate" className="doc-section">
+            <h2>Cost Estimate</h2>
+            <p>
+                MileCore runs on a single AWS EC2 instance with a SQLite database and uses the Claude API for its AI assistant. The Claude API is the dominant cost driver, accounting for 85–97% of total monthly spend depending on usage volume.
+            </p>
+
+            <h3>Claude API Cost Analysis</h3>
+            <p>
+                Each user message triggers an <strong>agentic loop</strong>: Claude receives the message, calls one or more tools (SQL queries, email sends), receives tool results, and generates a final response. On average this means <strong>~2 API calls per user message</strong>.
+            </p>
+
+            <h4>Per-Message Token Breakdown</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Component</th><th>Tokens</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>System prompt</td><td>~5,400</td><td>Full prompt + schema DDL. Cached with 5-min TTL.</td></tr>
+                    <tr><td>Tool definitions</td><td>~250</td><td>7 tool schemas</td></tr>
+                    <tr><td>Non-cached input</td><td>~4,000</td><td>User message + conversation history + tool results</td></tr>
+                    <tr><td>Cached reads</td><td>~10,800</td><td>System prompt from cache on both calls (~5,400 × 2). 90% hit rate.</td></tr>
+                    <tr><td>Cache writes</td><td>~540</td><td>System prompt written to cache on ~10% of requests</td></tr>
+                    <tr><td>Output tokens</td><td>~2,300</td><td>Tool-use call (~300) + final response (~2,000)</td></tr>
+                </tbody>
+            </table>
+
+            <h4>Claude API Pricing</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th></th><th>Sonnet 4</th><th>Opus 4</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Input tokens</td><td>$3.00 / MTok</td><td>$15.00 / MTok</td></tr>
+                    <tr><td>Output tokens</td><td>$15.00 / MTok</td><td>$75.00 / MTok</td></tr>
+                    <tr><td>Cache write</td><td>$3.75 / MTok</td><td>$18.75 / MTok</td></tr>
+                    <tr><td>Cache read</td><td>$0.30 / MTok</td><td>$1.50 / MTok</td></tr>
+                </tbody>
+            </table>
+            <p><em>MTok = 1 million tokens. Pricing as of early 2025.</em></p>
+
+            <h4>Per-Message Cost</h4>
+            <p><strong>Sonnet 4:</strong></p>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Component</th><th>Tokens</th><th>Rate</th><th>Cost</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Non-cached input</td><td>4,000</td><td>$3.00/MTok</td><td>$0.0120</td></tr>
+                    <tr><td>Cached reads</td><td>10,800</td><td>$0.30/MTok</td><td>$0.0032</td></tr>
+                    <tr><td>Cache writes</td><td>540</td><td>$3.75/MTok</td><td>$0.0020</td></tr>
+                    <tr><td>Output</td><td>2,300</td><td>$15.00/MTok</td><td>$0.0345</td></tr>
+                    <tr><td><strong>Total per message</strong></td><td></td><td></td><td><strong>~$0.052</strong></td></tr>
+                </tbody>
+            </table>
+            <p><strong>Opus 4:</strong></p>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Component</th><th>Tokens</th><th>Rate</th><th>Cost</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Non-cached input</td><td>4,000</td><td>$15.00/MTok</td><td>$0.0600</td></tr>
+                    <tr><td>Cached reads</td><td>10,800</td><td>$1.50/MTok</td><td>$0.0162</td></tr>
+                    <tr><td>Cache writes</td><td>540</td><td>$18.75/MTok</td><td>$0.0101</td></tr>
+                    <tr><td>Output</td><td>2,300</td><td>$75.00/MTok</td><td>$0.1725</td></tr>
+                    <tr><td><strong>Total per message</strong></td><td></td><td></td><td><strong>~$0.259</strong></td></tr>
+                </tbody>
+            </table>
+
+            <h4>Monthly API Cost by Usage Tier</h4>
+            <p>Based on 22 business days per month:</p>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Tier</th><th>Users</th><th>Msgs/User/Day</th><th>Msgs/Day</th><th>Msgs/Month</th><th>Sonnet 4/mo</th><th>Opus 4/mo</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Light</td><td>5</td><td>20</td><td>100</td><td>2,200</td><td><strong>$114</strong></td><td><strong>$569</strong></td></tr>
+                    <tr><td>Medium</td><td>15</td><td>30</td><td>450</td><td>9,900</td><td><strong>$512</strong></td><td><strong>$2,562</strong></td></tr>
+                    <tr><td>Heavy</td><td>50</td><td>40</td><td>2,000</td><td>44,000</td><td><strong>$2,275</strong></td><td><strong>$11,387</strong></td></tr>
+                </tbody>
+            </table>
+
+            <h3>AWS EC2 Costs</h3>
+            <p>MileCore runs on a single EC2 instance. SQLite eliminates the need for a separate database server.</p>
+
+            <h4>Instance Sizing</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Tier</th><th>Instance</th><th>vCPUs</th><th>RAM</th><th>On-Demand/mo</th><th>Reserved 1yr/mo</th><th>Savings</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Light</td><td>t3.small</td><td>2</td><td>2 GB</td><td>$15.18</td><td>$9.64</td><td>37%</td></tr>
+                    <tr><td>Medium</td><td>t3.medium</td><td>2</td><td>4 GB</td><td>$30.37</td><td>$19.27</td><td>37%</td></tr>
+                    <tr><td>Heavy</td><td>t3.large</td><td>2</td><td>8 GB</td><td>$60.74</td><td>$38.54</td><td>37%</td></tr>
+                </tbody>
+            </table>
+            <p><em>Prices for us-east-1, Linux, on-demand vs. 1-year standard reserved (no upfront).</em></p>
+
+            <h4>Storage (EBS)</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Tier</th><th>Volume</th><th>Size</th><th>Monthly Cost</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Light</td><td>gp3</td><td>20 GB</td><td>$1.60</td></tr>
+                    <tr><td>Medium</td><td>gp3</td><td>30 GB</td><td>$2.40</td></tr>
+                    <tr><td>Heavy</td><td>gp3</td><td>50 GB</td><td>$4.00</td></tr>
+                </tbody>
+            </table>
+
+            <h4>Data Transfer</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Tier</th><th>Estimated Outbound</th><th>Monthly Cost</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Light</td><td>~5 GB</td><td>$0.45</td></tr>
+                    <tr><td>Medium</td><td>~10 GB</td><td>$0.90</td></tr>
+                    <tr><td>Heavy</td><td>~20 GB</td><td>$1.80</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Other Costs</h3>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Item</th><th>Monthly Cost</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Domain registration</td><td>~$1.00</td><td>Amortized from ~$12/year</td></tr>
+                    <tr><td>SSL/TLS certificate</td><td>$0.00</td><td>Let's Encrypt (free, auto-renewing)</td></tr>
+                    <tr><td>Brevo SMTP</td><td>$0.00</td><td>Free tier: 300 emails/day</td></tr>
+                    <tr><td>S3 backups</td><td>$0.50–$2.00</td><td>Daily SQLite DB snapshots (&lt;100 MB)</td></tr>
+                    <tr><td>Route 53 DNS</td><td>$0.50</td><td>$0.50/hosted zone + negligible query costs</td></tr>
+                </tbody>
+            </table>
+            <p><strong>Total other costs: ~$2.00–$3.50/month</strong></p>
+
+            <h3>Monthly Summary</h3>
+
+            <h4>Light Usage (5 users, 100 msgs/day)</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Component</th><th>Sonnet 4</th><th>Opus 4</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Claude API</td><td>$114.00</td><td>$569.00</td></tr>
+                    <tr><td>EC2 (t3.small, on-demand)</td><td>$15.18</td><td>$15.18</td></tr>
+                    <tr><td>EBS (20 GB gp3)</td><td>$1.60</td><td>$1.60</td></tr>
+                    <tr><td>Data transfer</td><td>$0.45</td><td>$0.45</td></tr>
+                    <tr><td>Other (domain, S3, Route 53)</td><td>$2.50</td><td>$2.50</td></tr>
+                    <tr><td><strong>Monthly total</strong></td><td><strong>$133.73</strong></td><td><strong>$588.73</strong></td></tr>
+                    <tr><td><strong>Annual total</strong></td><td><strong>$1,605</strong></td><td><strong>$7,065</strong></td></tr>
+                    <tr><td>API as % of total</td><td>85%</td><td>97%</td></tr>
+                </tbody>
+            </table>
+
+            <h4>Medium Usage (15 users, 450 msgs/day)</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Component</th><th>Sonnet 4</th><th>Opus 4</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Claude API</td><td>$512.00</td><td>$2,562.00</td></tr>
+                    <tr><td>EC2 (t3.medium, on-demand)</td><td>$30.37</td><td>$30.37</td></tr>
+                    <tr><td>EBS (30 GB gp3)</td><td>$2.40</td><td>$2.40</td></tr>
+                    <tr><td>Data transfer</td><td>$0.90</td><td>$0.90</td></tr>
+                    <tr><td>Other (domain, S3, Route 53)</td><td>$3.00</td><td>$3.00</td></tr>
+                    <tr><td><strong>Monthly total</strong></td><td><strong>$548.67</strong></td><td><strong>$2,598.67</strong></td></tr>
+                    <tr><td><strong>Annual total</strong></td><td><strong>$6,584</strong></td><td><strong>$31,184</strong></td></tr>
+                    <tr><td>API as % of total</td><td>93%</td><td>99%</td></tr>
+                </tbody>
+            </table>
+
+            <h4>Heavy Usage (50 users, 2,000 msgs/day)</h4>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Component</th><th>Sonnet 4</th><th>Opus 4</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Claude API</td><td>$2,275.00</td><td>$11,387.00</td></tr>
+                    <tr><td>EC2 (t3.large, on-demand)</td><td>$60.74</td><td>$60.74</td></tr>
+                    <tr><td>EBS (50 GB gp3)</td><td>$4.00</td><td>$4.00</td></tr>
+                    <tr><td>Data transfer</td><td>$1.80</td><td>$1.80</td></tr>
+                    <tr><td>Other (domain, S3, Route 53)</td><td>$3.50</td><td>$3.50</td></tr>
+                    <tr><td><strong>Monthly total</strong></td><td><strong>$2,345.04</strong></td><td><strong>$11,457.04</strong></td></tr>
+                    <tr><td><strong>Annual total</strong></td><td><strong>$28,140</strong></td><td><strong>$137,484</strong></td></tr>
+                    <tr><td>API as % of total</td><td>97%</td><td>99%</td></tr>
+                </tbody>
+            </table>
+
+            <h4>With Reserved Instances (1-Year, No Upfront)</h4>
+            <p>Switching from on-demand to 1-year reserved instances saves ~37% on EC2:</p>
+            <table className="doc-table">
+                <thead>
+                    <tr><th>Tier</th><th>Sonnet Monthly (RI)</th><th>Opus Monthly (RI)</th><th>EC2 Savings/yr</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Light</td><td>$128.19</td><td>$583.19</td><td>$66</td></tr>
+                    <tr><td>Medium</td><td>$537.57</td><td>$2,587.57</td><td>$133</td></tr>
+                    <tr><td>Heavy</td><td>$2,322.84</td><td>$11,434.84</td><td>$266</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Key Observations</h3>
+            <div className="doc-callout">
+                <ul>
+                    <li><strong>API costs dominate everything.</strong> Claude API accounts for 85–99% of total spend. Infrastructure optimization has minimal impact on the overall bill.</li>
+                    <li><strong>Opus is ~5x more expensive than Sonnet.</strong> The default model is Sonnet. Switching to Opus should only be done if the quality improvement justifies a 5x cost increase.</li>
+                    <li><strong>Prompt caching saves ~90% on system prompt reads.</strong> The system prompt is cached with a 5-minute TTL. At Sonnet rates, this saves ~$0.014 per message vs. uncached reads (~$139/month saved at medium tier).</li>
+                    <li><strong>The agentic loop amplifies costs.</strong> Each tool call triggers another full API round-trip. A simple query costs ~$0.052, but a complex multi-step operation (3–4 tool calls) could cost $0.10–$0.15.</li>
+                    <li><strong>No scheduled API costs.</strong> Daily reports use direct SQL + Brevo SMTP — they do not call the Claude API.</li>
+                    <li><strong>SQLite eliminates database costs.</strong> No RDS or managed database service needed.</li>
+                    <li><strong>Email is effectively free.</strong> Brevo's free tier (300 emails/day) covers daily reports and ad-hoc sends with significant headroom.</li>
+                </ul>
+            </div>
+
+            <h3>Assumptions</h3>
+            <ul>
+                <li>22 business days per month for message volume calculations</li>
+                <li>us-east-1 region for all AWS pricing</li>
+                <li>90% prompt cache hit rate — realistic for active users within the 5-minute ephemeral window</li>
+                <li>Average 2 API calls per user message (1 initial + 1 tool-use follow-up)</li>
+                <li><span className="doc-code">max_tokens=4096</span> per API call — actual output is typically much shorter (~300–2,000 tokens)</li>
+                <li>Conversation history grows over a session — the 4,000 non-cached input token estimate accounts for average conversation context</li>
+                <li>AWS and Claude API pricing as of early 2025</li>
+                <li>Single-instance deployment — no load balancing, auto-scaling, or multi-AZ redundancy</li>
+                <li>Brevo free tier — 300 emails/day limit; upgrade to paid plan ($9/mo) only if needed</li>
             </ul>
         </section>
     );

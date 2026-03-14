@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MileCore entry point. Initializes database (preserving data) and starts the server."""
+"""MileCore entry point. Wipes and reinitializes database on every run, then starts the server."""
 
 import os
 import subprocess
@@ -30,14 +30,17 @@ def main():
     db_path = os.getenv("DATABASE_PATH", "milecore.db")
     schema_path = os.getenv("SCHEMA_PATH", "schema.sql")
 
-    from backend.database import init_db, migrate_db, execute_query
+    from backend.database import init_db
+    from initial_seed import seed_initial_data
 
-    if os.path.exists(db_path):
-        print(f"Using existing database: {db_path}")
-        migrate_db(schema_path)
-    else:
-        print(f"Creating new database: {db_path}")
-        init_db(schema_path)
+    for f in [db_path, db_path + "-shm", db_path + "-wal"]:
+        if os.path.exists(f):
+            os.remove(f)
+    print(f"Initializing fresh database: {db_path}")
+    init_db(schema_path)
+
+    print("Applying initial seed...")
+    seed_initial_data()
 
     # Build frontend
     build_frontend()

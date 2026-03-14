@@ -500,10 +500,3 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     FOREIGN KEY (submitted_by_person_id) REFERENCES people(id),
     FOREIGN KEY (reviewed_by_person_id) REFERENCES people(id)
 );
-
--- Seed data
-INSERT OR IGNORE INTO companies (id, name, type) VALUES (1, 'Milestone', 'employer');
-INSERT OR IGNORE INTO people (id, first_name, last_name, email, employer_id, is_user, username, user_role, is_supervisor, site_id)
-    VALUES (1, 'Dan', 'Gocan', 'dan.gocan@milestone.tech', 1, 1, 'dan', 'admin', 1, 1);
-INSERT OR IGNORE INTO people (id, first_name, last_name, employer_id, is_user, username, user_role)
-    VALUES (2, 'Bob', 'User', 1, 1, 'bob', 'user');

@@ -23,6 +23,49 @@ class ChatResponse(BaseModel):
     sql_executed: list
 
 
+def _get_current_user(person_id: int) -> dict | None:
+    result = execute_query(
+        """
+        SELECT
+            p.id AS person_id,
+            p.username,
+            p.first_name,
+            p.last_name,
+            p.email,
+            p.phone,
+            p.role_title,
+            p.department,
+            p.site_id,
+            p.team_id,
+            p.user_role AS role,
+            s.name AS site_name,
+            t.name AS team_name
+        FROM people p
+        LEFT JOIN sites s ON s.id = p.site_id
+        LEFT JOIN teams t ON t.id = p.team_id
+        WHERE p.id = ? AND p.is_user = 1
+        """,
+        [person_id],
+    )
+    if not result.get("rows"):
+        return None
+    row = result["rows"][0]
+    return {
+        "person_id": row["person_id"],
+        "username": row["username"],
+        "display_name": f"{row['first_name']} {row['last_name']}".strip(),
+        "email": row["email"],
+        "phone": row["phone"],
+        "role_title": row["role_title"],
+        "department": row["department"],
+        "site_id": row["site_id"],
+        "team_id": row["team_id"],
+        "site_name": row["site_name"],
+        "team_name": row["team_name"],
+        "role": row["role"],
+    }
+
+
 @router.get("/home-site")
 async def home_site_endpoint():
     site = get_home_site()
@@ -31,18 +74,15 @@ async def home_site_endpoint():
 
 @router.get("/user")
 async def get_user(person_id: int = Query(1)):
-    result = execute_query(
-        "SELECT id, username, first_name, last_name, user_role FROM people WHERE id = ? AND is_user = 1",
-        [person_id],
-    )
-    if not result.get("rows"):
+    current_user = _get_current_user(person_id)
+    if not current_user:
         raise HTTPException(status_code=404, detail="User not found")
-    row = result["rows"][0]
     return {
-        "person_id": row["id"],
-        "username": row["username"],
-        "display_name": row["first_name"],
-        "role": row["user_role"],
+        "person_id": current_user["person_id"],
+        "username": current_user["username"],
+        "display_name": current_user["display_name"].split(" ")[0],
+        "job_title": current_user["role_title"],
+        "role": current_user["role"],
     }
 
 
@@ -81,16 +121,13 @@ async def chat_stream_endpoint(req: ChatRequest):
         session_id = sessions.create_session(person_id)
         history = []
 
-    # Look up user role
-    user_result = execute_query(
-        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id]
-    )
-    user_role = user_result["rows"][0]["user_role"] if user_result.get("rows") else "user"
+    current_user = _get_current_user(person_id)
+    user_role = current_user["role"] if current_user else "user"
     state = {}
 
     def generate():
         yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
-        yield from chat_stream(req.message, history, state, user_role)
+        yield from chat_stream(req.message, history, state, user_role, current_user)
         if "history" in state:
             sessions.save_history(session_id, state["history"])
 
@@ -106,12 +143,9 @@ async def chat_endpoint(req: ChatRequest):
         session_id = sessions.create_session(person_id)
         history = []
 
-    # Look up user role
-    user_result = execute_query(
-        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id]
-    )
-    user_role = user_result["rows"][0]["user_role"] if user_result.get("rows") else "user"
-    result = chat(req.message, history, user_role)
+    current_user = _get_current_user(person_id)
+    user_role = current_user["role"] if current_user else "user"
+    result = chat(req.message, history, user_role, current_user)
     sessions.save_history(session_id, result["history"])
 
     return ChatResponse(

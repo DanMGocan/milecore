@@ -214,6 +214,8 @@ Person reports problem → Request created → Asset involved → Issue diagnose
 
 {user_role_section}
 
+{current_user_section}
+
 CURRENT DATABASE SCHEMA:
 {schema_ddl}
 
@@ -227,6 +229,7 @@ INSTRUCTIONS:
 - For dates, use ISO 8601 format (YYYY-MM-DD). For timestamps, use YYYY-MM-DD HH:MM:SS.
 - When searching, use LIKE with wildcards for flexible text matching.
 - If a query returns no results, say so clearly and suggest what the user might try instead.
+- For self-referential questions like "my email", "my phone", "my title", or "who am I", use the current user context provided in the system prompt or query the people table by the current user's person id. Never infer or guess personal details.
 - TIME-BASED STATUS QUERIES: When the user asks about records within a time range based on a status (e.g. "assets decommissioned last month", "requests closed this week"), use the `updated_at` column to filter by when the status change happened. Always combine the status filter with the date range on `updated_at`. For example, decommissioned assets in March: `WHERE lifecycle_status = 'decommissioned' AND updated_at >= '2026-03-01' AND updated_at < '2026-04-01'`. Use the same pattern for requests (status + opened_at/closed_at/resolved_at), events (status + start_time), etc. Be consistent — the same question must always produce the same query logic.
 
 FORMATTING:
