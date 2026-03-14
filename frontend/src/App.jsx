@@ -24,10 +24,12 @@ export default function App() {
         if (path === '/dashboard') return 'dashboard';
         return 'chat';
     });
+    const [menuOpen, setMenuOpen] = useState(false);
     const [logoutModal, setLogoutModal] = useState(false);
     const [demoModal, setDemoModal] = useState(false);
     const [seedLoading, setSeedLoading] = useState(false);
     const [seedDone, setSeedDone] = useState(false);
+    const [seedAlready, setSeedAlready] = useState(false);
     const [pendingCount, setPendingCount] = useState(0);
     const [personId, setPersonId] = useState(() => {
         const stored = localStorage.getItem('personId');
@@ -89,6 +91,10 @@ export default function App() {
             const data = await res.json();
             if (data.ok) {
                 setSeedDone(true);
+            } else if (data.already_seeded) {
+                setSeedAlready(true);
+                setSeedLoading(false);
+                return;
             } else {
                 setSeedDone(false);
                 setSeedLoading(false);
@@ -107,10 +113,14 @@ export default function App() {
     return (
         <div className="app">
             <nav className="navbar">
-                <div className="nav-links">
-                    <button className={`nav-link${page === 'chat' ? ' active' : ''}`} onClick={() => setPage('chat')}>Chat{currentUser?.role === 'admin' && pendingCount > 0 && <span className="approval-badge">{pendingCount} pending approval{pendingCount === 1 ? '' : 's'}</span>}</button>
-                    <button className={`nav-link${page === 'browser' ? ' active' : ''}`} onClick={() => setPage('browser')}>Database</button>
-                    <button className={`nav-link${page === 'dashboard' ? ' active' : ''}`} onClick={() => setPage('dashboard')}>Dashboard</button>
+                <button className="nav-hamburger" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">
+                    <span /><span /><span />
+                </button>
+                <div className={`nav-links${menuOpen ? ' open' : ''}`}>
+                    <button className={`nav-link${page === 'chat' ? ' active' : ''}`} onClick={() => { setPage('chat'); setMenuOpen(false); }}>Chat{currentUser?.role === 'admin' && pendingCount > 0 && <span className="approval-badge">{pendingCount} pending approval{pendingCount === 1 ? '' : 's'}</span>}</button>
+                    <button className={`nav-link${page === 'browser' ? ' active' : ''}`} onClick={() => { setPage('browser'); setMenuOpen(false); }}>Database</button>
+                    <button className={`nav-link${page === 'dashboard' ? ' active' : ''}`} onClick={() => { setPage('dashboard'); setMenuOpen(false); }}>Dashboard</button>
+                    <button className={`nav-link nav-link-docs${page === 'documentation' ? ' active' : ''}`} onClick={() => { setPage('documentation'); setMenuOpen(false); }}>Docs</button>
                 </div>
                 <div className="nav-actions">
                     <button className={`nav-link${page === 'documentation' ? ' active' : ''}`} onClick={() => setPage('documentation')}>Docs</button>
@@ -151,6 +161,21 @@ export default function App() {
                         <p>You can always reset the database by going to the <strong>Dashboard</strong> page and clicking the red <strong>"Reset Database"</strong> button.</p>
                         <div className="modal-actions">
                             <button className="btn btn-primary" onClick={() => { setDemoModal(false); setSeedDone(false); }}>Let's go!</button>
+                        </div>
+                    </>
+                ) : seedAlready ? (
+                    <>
+                        <div className="seed-success">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--warning, #e67e22)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                        </div>
+                        <p>The database already contains demo data. Seeding again could cause duplicates or conflicts.</p>
+                        <p>To re-seed, go to the <strong>Dashboard</strong> page and click the red <strong>"Reset Database"</strong> button first, then come back here.</p>
+                        <div className="modal-actions">
+                            <button className="btn btn-primary" onClick={() => { setDemoModal(false); setSeedAlready(false); }}>Got it</button>
                         </div>
                     </>
                 ) : (

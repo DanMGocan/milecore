@@ -110,6 +110,9 @@ Create a `.env` file in the project root:
 # Required
 ANTHROPIC_API_KEY=sk-ant-...
 
+# Optional — Spare API key (automatic failover on rate limit or auth error)
+ANTHROPIC_API_KEY_SPARE=sk-ant-...
+
 # Optional — Claude model (default: claude-sonnet-4-6)
 CLAUDE_MODEL=claude-sonnet-4-6
 

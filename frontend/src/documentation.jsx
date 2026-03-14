@@ -22,6 +22,7 @@ const TOC = [
 
 export function DocumentationPage() {
     const [activeId, setActiveId] = useState('overview');
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const contentRef = useRef(null);
 
     useEffect(() => {
@@ -54,11 +55,18 @@ export function DocumentationPage() {
     const scrollTo = (id) => {
         const el = document.getElementById(id);
         if (el) el.scrollIntoView({ behavior: 'smooth' });
+        setSidebarOpen(false);
     };
 
     return (
         <div className="doc-layout">
-            <nav className="doc-sidebar">
+            <div className={`sidebar-backdrop${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
+            <button className="doc-sidebar-toggle sidebar-toggle-btn" onClick={() => setSidebarOpen(o => !o)} aria-label="Toggle contents">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+                </svg>
+            </button>
+            <nav className={`doc-sidebar${sidebarOpen ? ' open' : ''}`}>
                 <div className="doc-toc-title">Contents</div>
                 {TOC.map(t => (
                     <button
@@ -469,6 +477,19 @@ function EmailSection() {
                     <tr><td><span className="doc-code">BREVO_SENDER_NAME</span></td><td>Display name for the sender</td></tr>
                 </tbody>
             </table>
+
+            <h3>API Key Configuration</h3>
+            <p>MileCore requires an Anthropic API key and optionally supports a spare key for automatic failover:</p>
+            <table className="doc-table">
+                <thead><tr><th>Variable</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><span className="doc-code">ANTHROPIC_API_KEY</span></td><td>Primary API key (required)</td></tr>
+                    <tr><td><span className="doc-code">ANTHROPIC_API_KEY_SPARE</span></td><td>Fallback API key (optional). Automatically used if the primary key hits a rate limit or authentication error</td></tr>
+                </tbody>
+            </table>
+            <div className="doc-callout doc-callout--tip">
+                <strong>Automatic failover:</strong> If a spare key is configured, MileCore will seamlessly switch to it when the primary key is rate-limited or fails authentication. This happens transparently with no interruption to the user's conversation.
+            </div>
         </section>
     );
 }
@@ -803,8 +824,8 @@ function QATestingSection() {
                     </tr>
                     <tr>
                         <td>Environment variables set</td>
-                        <td>Verify <span className="doc-code">ANTHROPIC_API_KEY</span> and Brevo SMTP variables are configured</td>
-                        <td>AI responses stream correctly; email features do not error on missing config</td>
+                        <td>Verify <span className="doc-code">ANTHROPIC_API_KEY</span> (and optionally <span className="doc-code">ANTHROPIC_API_KEY_SPARE</span>) and Brevo SMTP variables are configured</td>
+                        <td>AI responses stream correctly; spare key failover works on rate limit; email features do not error on missing config</td>
                     </tr>
                 </tbody>
             </table>
@@ -1180,16 +1201,16 @@ function CostEstimateSection() {
         <section id="cost-estimate" className="doc-section">
             <h2>Cost Estimate</h2>
             <div style={{
-                background: '#fff8e1',
-                border: '1px solid #ffe082',
-                borderLeft: '4px solid #ffc107',
+                background: '#ffeb3b',
+                border: '1px solid #fdd835',
+                borderLeft: '4px solid #f9a825',
                 borderRadius: '6px',
                 padding: '12px 16px',
                 marginBottom: '20px',
                 fontSize: '0.95em',
-                color: '#6d4c00'
+                color: '#000000'
             }}>
-                <strong>Model Recommendation:</strong> MileCore has been tested with both Sonnet and Opus models. Although Sonnet is 5 times cheaper than Opus, the performance has been very similar, so the recommendation is to run MileCore with the Sonnet 4.6 model for decreased costs and the same performance. No testing has been done with OpenAI LLMs.
+                <strong style={{ color: '#8b0000' }}>Model Recommendation:</strong> MileCore has been tested with both Sonnet and Opus models. Although Sonnet is 5 times cheaper than Opus, the performance has been very similar, so the recommendation is to run MileCore with the Sonnet 4.6 model for decreased costs and the same performance. No testing has been done with OpenAI LLMs.
             </div>
             <p>
                 MileCore runs on a single AWS EC2 instance with a SQLite database and uses the Claude API for its AI assistant. The Claude API is the dominant cost driver, accounting for 85–97% of total monthly spend depending on usage volume.

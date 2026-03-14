@@ -109,6 +109,13 @@ async def seed_demo():
     if not os.path.exists(xlsx_path):
         return {"ok": False, "error": "Demo data file not found"}
 
+    # Check if demo data has already been seeded (initial seed only has 1 company)
+    conn = get_connection()
+    row = conn.execute("SELECT COUNT(*) FROM companies").fetchone()
+    if row and row[0] > 1:
+        return {"ok": False, "already_seeded": True,
+                "error": "The database already contains demo data. Please reset the database from the Dashboard page first."}
+
     try:
         wb = openpyxl.load_workbook(xlsx_path)
         conn = get_connection()

@@ -115,6 +115,7 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
     const [loading, setLoading] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [sessionId, setSessionId] = useState(null);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [homeSiteChecked, setHomeSiteChecked] = useState(false);
     const [sessions, setSessions] = useState([]);
     const [pendingFile, setPendingFile] = useState(null);
@@ -157,18 +158,26 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
         return () => clearInterval(id);
     }, [messages.length]);
 
+    useEffect(() => {
+        if (sidebarOpen) document.body.classList.add('sidebar-open');
+        else document.body.classList.remove('sidebar-open');
+        return () => document.body.classList.remove('sidebar-open');
+    }, [sidebarOpen]);
+
     const loadSession = async (sid) => {
         try {
             const res = await fetch(`/api/sessions/${sid}`);
             const data = await res.json();
             setSessionId(sid);
             setMessages(data.messages || []);
+            setSidebarOpen(false);
         } catch {}
     };
 
     const startNewChat = () => {
         setSessionId(null);
         setMessages([]);
+        setSidebarOpen(false);
     };
 
     const sendMessage = async () => {
@@ -308,7 +317,8 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
 
     return (
         <div className="chat-layout">
-            <div className="session-sidebar">
+            <div className={`sidebar-backdrop${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
+            <div className={`session-sidebar${sidebarOpen ? ' open' : ''}`}>
                 <div className="sidebar-header">
                     <h3>Conversations</h3>
                     <button className="btn btn-sm btn-primary" onClick={startNewChat}>+ New</button>
@@ -359,6 +369,11 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                 </div>
             </div>
             <div className="chat-container">
+                <button className="sidebar-toggle-btn" onClick={() => setSidebarOpen(o => !o)} aria-label="Toggle sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+                    </svg>
+                </button>
                 <div className="chat-messages">
                     {messages.length === 0 && homeSiteChecked && (
                         <div className="empty-state">

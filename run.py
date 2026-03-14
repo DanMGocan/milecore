@@ -27,6 +27,12 @@ def main():
         print("ERROR: Please set ANTHROPIC_API_KEY in your .env file")
         sys.exit(1)
 
+    spare_key = os.getenv("ANTHROPIC_API_KEY_SPARE")
+    if spare_key:
+        print("Spare API key configured (will be used as fallback)")
+    else:
+        print("No spare API key configured (set ANTHROPIC_API_KEY_SPARE for fallback)")
+
     db_path = os.getenv("DATABASE_PATH", "milecore.db")
     schema_path = os.getenv("SCHEMA_PATH", "schema.sql")
 

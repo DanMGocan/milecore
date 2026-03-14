@@ -274,7 +274,7 @@ body {
 }
 
 .session-sidebar {
-    width: 260px;
+    width: 300px;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border);
     display: flex;
@@ -1965,6 +1965,64 @@ select.form-input {
     font-weight: 700;
 }
 
+/* === New desktop-hidden elements === */
+.nav-hamburger {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    z-index: 101;
+    transition: all var(--transition-fast);
+}
+
+.nav-hamburger:hover {
+    background: var(--bg-hover);
+}
+
+.nav-hamburger span {
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: var(--text-secondary);
+    border-radius: 2px;
+    transition: all var(--transition-fast);
+}
+
+.nav-link-docs {
+    display: none;
+}
+
+.sidebar-backdrop {
+    display: none;
+}
+
+.sidebar-toggle-btn {
+    display: none;
+}
+
+.doc-sidebar-toggle {
+    display: none;
+}
+
+.data-grid-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.demo-files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
 /* === Responsive === */
 @media (min-width: 1200px) {
     .app {
@@ -1976,18 +2034,207 @@ select.form-input {
 }
 
 @media (max-width: 768px) {
-    .session-sidebar {
-        width: 200px;
+    /* --- Global --- */
+    .app {
+        max-width: none;
     }
 
+    body.sidebar-open {
+        overflow: hidden;
+    }
+
+    .btn {
+        min-height: 44px;
+    }
+
+    .modal {
+        min-width: unset;
+        width: calc(100vw - 32px);
+        max-width: 600px;
+    }
+
+    .delete-row-btn {
+        opacity: 0.6;
+    }
+
+    /* --- Navbar hamburger --- */
+    .nav-hamburger {
+        display: flex;
+        margin-left: auto;
+    }
+
+    .nav-links {
+        position: absolute;
+        top: 52px;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border);
+        box-shadow: var(--shadow-md);
+        display: none;
+        z-index: 100;
+    }
+
+    .nav-links.open {
+        display: flex;
+    }
+
+    .nav-link {
+        min-height: 44px;
+        width: 100%;
+        text-align: left;
+        padding: 12px 20px;
+        border-radius: 0;
+    }
+
+    .nav-link.active::after {
+        display: none;
+    }
+
+    .nav-link-docs {
+        display: block;
+    }
+
+    .nav-actions {
+        display: none;
+    }
+
+    /* --- Sidebar backdrop (shared) --- */
+    .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 140;
+    }
+
+    .sidebar-backdrop.visible {
+        display: block;
+    }
+
+    /* --- Sidebar toggle button (shared) — fixed into navbar --- */
+    .sidebar-toggle-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 6px;
+        left: 16px;
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--text-secondary);
+        cursor: pointer;
+        z-index: 101;
+        transition: all var(--transition-fast);
+    }
+
+    .sidebar-toggle-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+    }
+
+    /* --- Chat sidebar off-canvas --- */
+    .session-sidebar {
+        position: fixed;
+        top: 52px;
+        left: 0;
+        bottom: 0;
+        width: 300px;
+        z-index: 150;
+        transform: translateX(-100%);
+        transition: transform var(--transition-normal);
+    }
+
+    .session-sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* --- Browser sidebar off-canvas --- */
     .browser-sidebar {
-        width: 200px;
+        position: fixed;
+        top: 52px;
+        left: 0;
+        bottom: 0;
+        width: 280px;
+        z-index: 150;
+        transform: translateX(-100%);
+        transition: transform var(--transition-normal);
+    }
+
+    .browser-sidebar.open {
+        transform: translateX(0);
+    }
+
+    .browser-sidebar-toggle {
+        position: fixed;
+    }
+
+    .browser-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .toolbar-actions {
+        flex-wrap: wrap;
+    }
+
+    .schema-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+
+    /* --- Documentation sidebar off-canvas --- */
+    .doc-sidebar {
+        position: fixed;
+        top: 52px;
+        left: 0;
+        bottom: 0;
+        width: 260px;
+        z-index: 150;
+        transform: translateX(-100%);
+        transition: transform var(--transition-normal);
+        display: flex;
+    }
+
+    .doc-sidebar.open {
+        transform: translateX(0);
+    }
+
+    .doc-sidebar-toggle {
+        display: flex;
+    }
+
+    .doc-content {
+        padding: 20px 16px;
+    }
+
+    .doc-table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    /* --- Dashboard --- */
+    .dashboard-container {
+        padding: 16px;
     }
 
     .dashboard-grid {
         grid-template-columns: 1fr;
     }
 
+    .dashboard-management-row {
+        flex-direction: column;
+    }
+
+    .dashboard-management-row .btn {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    /* --- Chat --- */
     .profile-pic {
         width: 48px;
         height: 48px;
@@ -1995,14 +2242,6 @@ select.form-input {
 
     .nav-brand-motto {
         display: none;
-    }
-
-    .doc-sidebar {
-        display: none;
-    }
-
-    .doc-content {
-        padding: 20px 16px;
     }
 
     .empty-state {
@@ -2013,6 +2252,15 @@ select.form-input {
         top: calc(50% + 108px);
         width: min(calc(100% - 24px), 560px);
         min-height: 88px;
+    }
+
+    /* --- Touch targets --- */
+    .session-item,
+    .table-item,
+    .doc-toc-item {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
     }
 }
 
@@ -2025,17 +2273,46 @@ select.form-input {
         max-width: 95%;
     }
 
-    .session-sidebar {
-        width: 160px;
-    }
-
-    .browser-sidebar {
-        width: 160px;
-    }
-
     .profile-pic {
-        width: 40px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
+    }
+
+    .message-row {
+        gap: 6px;
+    }
+
+    .chat-messages {
+        padding: 16px 12px 12px;
+    }
+
+    .chat-input-container {
+        padding: 8px 12px;
+        margin-bottom: 8px;
+    }
+
+    .dashboard-cards {
+        flex-direction: column;
+    }
+
+    .dashboard-card {
+        min-width: unset;
+    }
+
+    .demo-files-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .doc-content {
+        padding: 16px 12px;
+    }
+
+    .doc-section h2 {
+        font-size: 17px;
+    }
+
+    .doc-section h3 {
+        font-size: 14px;
     }
 
     .empty-state-hero {
@@ -2046,5 +2323,9 @@ select.form-input {
         top: calc(50% + 104px);
         width: min(calc(100% - 20px), 420px);
         min-height: 104px;
+    }
+
+    .app-content {
+        height: calc(100dvh - 52px);
     }
 }

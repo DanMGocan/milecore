@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_API_KEY_SPARE = os.getenv("ANTHROPIC_API_KEY_SPARE")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 DATABASE_PATH = os.getenv("DATABASE_PATH", "milecore.db")
 SCHEMA_PATH = os.getenv("SCHEMA_PATH", "schema.sql")

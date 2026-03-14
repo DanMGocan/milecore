@@ -193,6 +193,7 @@ function InsertRowModal({ open, onClose, tableName, columns, onInserted }) {
 export function BrowserPage() {
     const [tables, setTables] = useState([]);
     const [selected, setSelected] = useState(null);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [schema, setSchema] = useState([]);
     const [rows, setRows] = useState([]);
     const [columns, setColumns] = useState([]);
@@ -232,6 +233,7 @@ export function BrowserPage() {
     const selectTable = (name) => {
         setSelected(name);
         loadTable(name, 0);
+        setSidebarOpen(false);
     };
 
     const deleteRow = async (rowId) => {
@@ -262,7 +264,13 @@ export function BrowserPage() {
     return (
         <div className="browser-container">
             {/* Sidebar */}
-            <div className="browser-sidebar">
+            <div className={`sidebar-backdrop${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
+            <button className="sidebar-toggle-btn browser-sidebar-toggle" onClick={() => setSidebarOpen(o => !o)} aria-label="Toggle sidebar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+                </svg>
+            </button>
+            <div className={`browser-sidebar${sidebarOpen ? ' open' : ''}`}>
                 <div className="sidebar-header">
                     <h3>Tables</h3>
                     <button className="btn btn-sm btn-primary" onClick={() => setShowCreate(true)}>+ New</button>
@@ -316,6 +324,7 @@ export function BrowserPage() {
                         {/* Data grid */}
                         <div className="browser-content browser-content-fade" key={selected + '-' + offset}>
                             {rows.length > 0 ? (
+                                <div className="data-grid-scroll-wrapper">
                                 <table className="data-grid">
                                     <thead>
                                         <tr>
@@ -343,6 +352,7 @@ export function BrowserPage() {
                                         ))}
                                     </tbody>
                                 </table>
+                                </div>
                             ) : (
                                 <div className="browser-empty-state">
                                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}>

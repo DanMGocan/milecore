@@ -236,7 +236,7 @@ export function DashboardPage({ currentUser }) {
                 <div className="dashboard-management-hint">
                     Download sample data to test the chatbot (CSV) or Import &amp; Merge (XLSX). Feel free to modify these files or use your own.
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <div className="demo-files-grid">
                     {DEMO_FILES.map(f => (
                         <a key={f.name} href={`/dummy_files/${f.name}`} download className="btn btn-sm" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: '0.15rem' }}>
                             <span style={{ fontWeight: 600 }}>{f.name}</span>

@@ -7,6 +7,7 @@ import anthropic
 
 from backend.config import (
     ANTHROPIC_API_KEY,
+    ANTHROPIC_API_KEY_SPARE,
     CLAUDE_MODEL,
     BREVO_SENDER_EMAIL,
     BREVO_SENDER_NAME,
@@ -15,7 +16,23 @@ from backend.database import execute_query, get_home_site, get_schema_ddl, valid
 from backend.email_sender import send_email as smtp_send_email
 from backend.prompts import SYSTEM_TEMPLATE, TOOLS
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+_primary_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+_spare_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY_SPARE) if ANTHROPIC_API_KEY_SPARE else None
+_active_client: anthropic.Anthropic = _primary_client
+
+
+def _get_client() -> anthropic.Anthropic:
+    return _active_client
+
+
+def _swap_to_spare() -> bool:
+    """Switch to spare client. Returns True if swap succeeded."""
+    global _active_client
+    if _spare_client and _active_client is _primary_client:
+        _active_client = _spare_client
+        print("[claude_client] Switched to spare API key")
+        return True
+    return False
 
 # Schema DDL cache — cleared when tables are created/dropped
 _schema_cache: str | None = None
@@ -397,16 +414,22 @@ def chat_stream(
     sql_log: list[dict[str, Any]] = []
 
     while True:
-        with client.messages.stream(
-            model=CLAUDE_MODEL,
-            max_tokens=4096,
-            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-            tools=TOOLS,
-            messages=messages,
-        ) as stream:
-            for text_chunk in stream.text_stream:
-                yield f"event: token\ndata: {json.dumps({'text': text_chunk})}\n\n"
-            response = stream.get_final_message()
+        try:
+            with _get_client().messages.stream(
+                model=CLAUDE_MODEL,
+                max_tokens=4096,
+                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+                tools=TOOLS,
+                messages=messages,
+            ) as stream:
+                for text_chunk in stream.text_stream:
+                    yield f"event: token\ndata: {json.dumps({'text': text_chunk})}\n\n"
+                response = stream.get_final_message()
+        except (anthropic.RateLimitError, anthropic.AuthenticationError) as exc:
+            if _swap_to_spare():
+                yield f"event: token\ndata: {json.dumps({'text': ''})}\n\n"
+                continue
+            raise exc
 
         assistant_content = _build_content(response)
         messages.append({"role": "assistant", "content": assistant_content})
@@ -436,13 +459,18 @@ def chat(
     sql_log: list[dict[str, Any]] = []
 
     while True:
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=4096,
-            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-            tools=TOOLS,
-            messages=messages,
-        )
+        try:
+            response = _get_client().messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=4096,
+                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+                tools=TOOLS,
+                messages=messages,
+            )
+        except (anthropic.RateLimitError, anthropic.AuthenticationError) as exc:
+            if _swap_to_spare():
+                continue
+            raise exc
 
         assistant_content = _build_content(response)
         messages.append({"role": "assistant", "content": assistant_content})
