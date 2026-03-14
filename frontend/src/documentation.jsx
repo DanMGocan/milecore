@@ -1179,6 +1179,18 @@ function CostEstimateSection() {
     return (
         <section id="cost-estimate" className="doc-section">
             <h2>Cost Estimate</h2>
+            <div style={{
+                background: '#fff8e1',
+                border: '1px solid #ffe082',
+                borderLeft: '4px solid #ffc107',
+                borderRadius: '6px',
+                padding: '12px 16px',
+                marginBottom: '20px',
+                fontSize: '0.95em',
+                color: '#6d4c00'
+            }}>
+                <strong>Model Recommendation:</strong> MileCore has been tested with both Sonnet and Opus models. Although Sonnet is 5 times cheaper than Opus, the performance has been very similar, so the recommendation is to run MileCore with the Sonnet 4.6 model for decreased costs and the same performance. No testing has been done with OpenAI LLMs.
+            </div>
             <p>
                 MileCore runs on a single AWS EC2 instance with a SQLite database and uses the Claude API for its AI assistant. The Claude API is the dominant cost driver, accounting for 85–97% of total monthly spend depending on usage volume.
             </p>

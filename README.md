@@ -85,7 +85,7 @@ milebot/
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - Node.js 18+ and npm
 - An [Anthropic API key](https://console.anthropic.com/)
 
