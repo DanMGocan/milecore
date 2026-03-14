@@ -65,6 +65,10 @@ def create_app() -> FastAPI:
     if os.path.isdir(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+    dummy_dir = os.path.join(os.path.dirname(__file__), "..", "dummy_files")
+    if os.path.isdir(dummy_dir):
+        app.mount("/dummy_files", StaticFiles(directory=dummy_dir), name="dummy_files")
+
     @app.get("/{path:path}")
     async def serve_spa(path: str):
         dist_index = os.path.join(dist_dir, "index.html")

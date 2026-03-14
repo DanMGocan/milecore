@@ -1,0 +1,16 @@
+asset_tag,serial_number,hostname,asset_type,brand,model,category,operating_system,purchase_date,warranty_expiry,lifecycle_status,ownership_type,site_id,room_id,assigned_to_person_id,notes,important
+AST-0001,SN7845123,LAT-7430-01,laptop,Dell,Latitude 7430,end_user_device,Windows 11,2023-02-15,2026-02-15,active,owned,1,3,8,Assigned to finance team,0
+AST-0002,SN9934211,LAT-7430-02,laptop,Dell,Latitude 7430,end_user_device,Windows 11,2023-03-10,2026-03-10,active,owned,1,3,2,Touchpad driver issues reported,1
+AST-0003,SN4567812,MBP-16-01,laptop,Apple,MacBook Pro 16,end_user_device,macOS Sonoma,2022-11-20,2025-11-20,active,owned,1,3,3,Used by network team,0
+AST-0004,SN2245678,OPT-7090-01,desktop,Dell,OptiPlex 7090,end_user_device,Windows 10,2021-08-12,2024-08-12,active,owned,2,7,5,Reception workstation,0
+AST-0005,SN8877612,HP-ELITE-01,laptop,HP,EliteBook 840,end_user_device,Windows 11,2023-05-02,2026-05-02,active,leased,2,7,10,Sales team laptop,0
+AST-0006,SN5512234,MON-DELL-01,monitor,Dell,U2723QE,peripheral,,2023-01-12,2026-01-12,active,owned,1,3,8,4K monitor paired with AST-0001,0
+AST-0007,SN2234871,DOCK-DELL-01,dock,Dell,WD19S,peripheral,,2023-01-15,2026-01-15,active,owned,1,3,8,USB-C docking station,0
+AST-0008,SN9987123,PRN-HP-01,printer,HP,Color LaserJet Pro,infrastructure,,2022-09-10,2025-09-10,active,owned,1,4,,Shared office printer — Dublin,0
+AST-0009,SN6671238,SW-CISCO-01,switch,Cisco,Catalyst 9300,networking,IOS-XE,2021-12-01,2026-12-01,active,owned,1,1,,Core network switch — Dublin server room,1
+AST-0010,SN3321987,AP-UBNT-01,access_point,Ubiquiti,U6-LR,networking,UniFi OS,2022-04-17,2025-04-17,active,owned,1,3,,WiFi AP for open office floor,0
+AST-0011,SN1129876,SW-CISCO-02,switch,Cisco,Catalyst 9200,networking,IOS-XE,2022-06-15,2027-06-15,active,owned,2,5,,Network switch — Austin server closet,1
+AST-0012,SN4451098,AP-UBNT-02,access_point,Ubiquiti,U6-Pro,networking,UniFi OS,2022-07-20,2025-07-20,active,owned,2,7,,WiFi AP for Austin bullpen,0
+AST-0013,SN7789012,PRN-HP-02,printer,HP,LaserJet Pro M404,infrastructure,,2023-04-05,2026-04-05,active,owned,3,10,,Shared printer — London hot desk area,0
+AST-0014,SN8890123,LAT-5540-01,laptop,Dell,Latitude 5540,end_user_device,Windows 11,2024-01-08,2027-01-08,active,owned,3,10,6,IT coordinator laptop — London,0
+AST-0015,SN9901234,MON-LG-01,monitor,LG,27UK850,peripheral,,2023-06-20,2026-06-20,active,owned,3,10,6,Paired with AST-0014,0

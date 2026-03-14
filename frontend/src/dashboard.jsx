@@ -11,6 +11,19 @@ const tooltipStyle = {
     labelStyle: { color: '#9ca0b0' },
 };
 
+const DEMO_FILES = [
+    { name: 'companies.csv', description: '4 client & vendor companies', hint: 'Upload via chat' },
+    { name: 'sites.csv', description: '3 office sites across Dublin, Austin, London', hint: 'Upload via chat' },
+    { name: 'rooms.csv', description: '10 rooms — server rooms, offices, conference rooms', hint: 'Upload via chat' },
+    { name: 'people.csv', description: '12 staff with roles, departments, sites', hint: 'Upload via chat' },
+    { name: 'assets.csv', description: '15 laptops, monitors, switches, printers, APs', hint: 'Upload via chat' },
+    { name: 'requests.csv', description: '12 support tickets in various statuses', hint: 'Upload via chat' },
+    { name: 'technical_issues.csv', description: '8 known issues with symptoms & resolutions', hint: 'Upload via chat' },
+    { name: 'events.csv', description: '6 vendor visits, maintenance, training sessions', hint: 'Upload via chat' },
+    { name: 'inventory_items.csv', description: '10 spare parts, cables, toner, consumables', hint: 'Upload via chat' },
+    { name: 'demo_full_import.xlsx', description: 'All tables in one workbook', hint: 'Use Import & Merge' },
+];
+
 const CARD_ACCENTS = {
     'Active Assets': '#6c8cff',
     'Open Requests': '#4ade80',
@@ -153,7 +166,7 @@ export function DashboardPage({ currentUser }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke="#2d3045" />
                                 <XAxis dataKey="date" tick={{ fill: '#9ca0b0', fontSize: 11 }} />
                                 <YAxis tick={{ fill: '#9ca0b0', fontSize: 11 }} allowDecimals={false} />
-                                <Tooltip {...tooltipStyle} />
+                                <Tooltip {...tooltipStyle} cursor={false} />
                                 <Bar dataKey="count" fill="#6c8cff" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -177,7 +190,7 @@ export function DashboardPage({ currentUser }) {
                                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <Tooltip {...tooltipStyle} />
+                                <Tooltip {...tooltipStyle} cursor={false} />
                             </PieChart>
                         </ResponsiveContainer>
                     ) : <EmptyChart />}
@@ -190,7 +203,7 @@ export function DashboardPage({ currentUser }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke="#2d3045" />
                                 <XAxis type="number" tick={{ fill: '#9ca0b0', fontSize: 11 }} allowDecimals={false} />
                                 <YAxis type="category" dataKey="status" tick={{ fill: '#9ca0b0', fontSize: 11 }} width={100} />
-                                <Tooltip {...tooltipStyle} />
+                                <Tooltip {...tooltipStyle} cursor={false} />
                                 <Bar dataKey="count" fill="#4ade80" radius={[0, 4, 4, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -204,7 +217,7 @@ export function DashboardPage({ currentUser }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke="#2d3045" />
                                 <XAxis dataKey="site" tick={{ fill: '#9ca0b0', fontSize: 11 }} />
                                 <YAxis tick={{ fill: '#9ca0b0', fontSize: 11 }} allowDecimals={false} />
-                                <Tooltip {...tooltipStyle} />
+                                <Tooltip {...tooltipStyle} cursor={false} />
                                 <Bar dataKey="count" fill="#a78bfa" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -217,6 +230,22 @@ export function DashboardPage({ currentUser }) {
                     Repository last updated at: {new Date(overview.last_push).toLocaleString()}
                 </p>
             )}
+
+            <div className="dashboard-management">
+                <div className="dashboard-management-title">Dummy Files for Demo</div>
+                <div className="dashboard-management-hint">
+                    Download sample data to test the chatbot (CSV) or Import &amp; Merge (XLSX). Feel free to modify these files or use your own.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    {DEMO_FILES.map(f => (
+                        <a key={f.name} href={`/dummy_files/${f.name}`} download className="btn btn-sm" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: '0.15rem' }}>
+                            <span style={{ fontWeight: 600 }}>{f.name}</span>
+                            <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{f.description}</span>
+                            <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>{f.hint}</span>
+                        </a>
+                    ))}
+                </div>
+            </div>
 
             <div className="dashboard-management">
                 <div className="dashboard-management-title">Database Management</div>

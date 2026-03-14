@@ -1,0 +1,5 @@
+name,type,category,email,phone,website,address,notes,status
+Acme Corp,client,services,contact@acmecorp.com,+1-555-100-2000,https://acmecorp.com,"100 Market St, San Francisco, CA",Primary client account,active
+TechServe Solutions,vendor,hardware,sales@techserve.io,+1-555-200-3000,https://techserve.io,"42 Tech Park, Austin, TX",Hardware procurement partner,active
+NetFlow Systems,vendor,networking,support@netflow.net,+353-1-555-4000,https://netflow.net,"8 Docklands Ave, Dublin, Ireland",Network infrastructure vendor,active
+FurnishCo,vendor,facilities,orders@furnishco.com,+44-20-555-5000,https://furnishco.co.uk,"15 High Street, London, UK",Office furniture supplier,active

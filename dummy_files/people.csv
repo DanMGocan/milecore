@@ -1,0 +1,13 @@
+first_name,last_name,email,phone,role_title,department,site_id,employer_id,is_supervisor,hire_date,status
+Sarah,Mitchell,sarah.mitchell@acmecorp.com,+353-1-555-1001,IT Manager,IT,1,1,1,2019-03-15,active
+James,O'Brien,james.obrien@acmecorp.com,+353-1-555-1002,Systems Administrator,IT,1,1,0,2020-07-01,active
+Aoife,Kelly,aoife.kelly@acmecorp.com,+353-1-555-1003,Network Engineer,IT,1,1,0,2021-01-10,active
+Mark,Chen,mark.chen@acmecorp.com,+1-555-2001,Site Technician,IT,2,1,0,2020-11-20,active
+Lisa,Ramirez,lisa.ramirez@acmecorp.com,+1-555-2002,Helpdesk Analyst,IT,2,1,0,2022-02-14,active
+Tom,Bradley,tom.bradley@acmecorp.com,+44-20-555-3001,IT Coordinator,IT,3,1,0,2021-06-01,active
+Emma,Watson,emma.watson@acmecorp.com,+44-20-555-3002,Desktop Support,IT,3,1,0,2022-09-12,active
+Raj,Patel,raj.patel@acmecorp.com,+353-1-555-1004,Finance Analyst,Finance,1,1,0,2021-04-18,active
+Nina,Volkov,nina.volkov@acmecorp.com,+353-1-555-1005,HR Coordinator,HR,1,1,0,2020-08-25,active
+Carlos,Diaz,carlos.diaz@acmecorp.com,+1-555-2003,Sales Executive,Sales,2,1,0,2023-01-09,active
+Fiona,Clarke,fiona.clarke@acmecorp.com,+44-20-555-3003,Operations Lead,Operations,3,1,1,2019-10-30,active
+Kevin,Murphy,kevin.murphy@techserve.io,+1-555-8001,Account Manager,Sales,2,2,0,2018-05-14,active

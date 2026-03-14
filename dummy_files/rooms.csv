@@ -1,0 +1,11 @@
+site_id,name,code,description,capacity,status
+1,Server Room A,DUB-SR-A,Primary server room with rack space for 20 units,0,active
+1,Conference Room 1,DUB-CR-1,Large meeting room with video conferencing,16,active
+1,Open Office Floor,DUB-OF-1,Main open-plan workspace,60,active
+1,IT Storage,DUB-ST-1,IT equipment storage and staging area,0,active
+2,Server Closet,AUS-SR-1,Small server closet with 2 racks,0,active
+2,Meeting Room A,AUS-MR-A,Medium conference room,10,active
+2,Bullpen,AUS-OF-1,Open office area,30,active
+3,Comms Room,LON-CR-1,Communications and network room,0,active
+3,Boardroom,LON-BR-1,Executive boardroom with AV equipment,20,active
+3,Hot Desk Area,LON-HD-1,Flexible hot-desking zone,40,active

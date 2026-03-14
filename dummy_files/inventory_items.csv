@@ -1,0 +1,11 @@
+sku,item_name,item_type,brand,model,unit_of_measure,reorder_threshold,notes
+INV-001,Cat6 Patch Cable 2m,cable,Generic,,each,20,Standard blue Cat6 patch cables for desk drops
+INV-002,Cat6 Patch Cable 5m,cable,Generic,,each,10,Longer patch cables for server room runs
+INV-003,SFP+ 10G Module,networking,Cisco,SFP-10G-SR,each,4,10G short-range SFP modules for Catalyst switches
+INV-004,USB-C to HDMI Adapter,adapter,Dell,,each,5,For connecting laptops to legacy HDMI displays
+INV-005,Toner Cartridge — Black,consumable,HP,CF258A,each,3,Compatible with Color LaserJet Pro and LaserJet Pro M404
+INV-006,Toner Cartridge — Color Pack,consumable,HP,CF361A/2A/3A,pack,2,Cyan/Magenta/Yellow combo for Color LaserJet Pro
+INV-007,Wireless Mouse,peripheral,Logitech,M720 Triathlon,each,5,Standard issue wireless mouse
+INV-008,Laptop Power Adapter 65W,power,Dell,HA65NM190,each,3,Replacement charger for Dell Latitude series
+INV-009,Keyboard — Ergonomic,peripheral,Microsoft,Sculpt Ergonomic,each,2,For RSI accommodation requests
+INV-010,Pickup Roller Kit — Tray 2,spare_part,HP,RM2-5452,each,2,Replacement roller for HP LaserJet tray 2 paper jams

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Markdown from 'react-markdown';
+import { Modal } from './components';
 import logo from '../static/img/milecore_logo.avif';
 import profilePic1 from '../static/img/profile_pic_1.jpg';
 import profilePic2 from '../static/img/profile_pic_2.jpg';
@@ -90,23 +91,21 @@ function ChatMessage({ role, text, sql, file, timestamp }) {
     );
 }
 
-const BADGES = [
-    { text: 'Add People', color: '#facc15' },
-    { text: 'Manage Assets', color: '#7dd3fc' },
-    { text: 'Send Emails', color: '#4ade80' },
-    { text: 'Track Issues', color: '#f87171' },
-    { text: 'Log Work', color: '#c084fc' },
-    { text: 'Import CSV', color: '#fb923c' },
-    { text: 'Share Knowledge', color: '#22d3ee' },
-    { text: 'Manage Inventory', color: '#f472b6' },
-    { text: 'Schedule Events', color: '#a3e635' },
-    { text: 'Track Vendors', color: '#fbbf24' },
+const PROMPTS = [
+    { text: 'How many Dell Latitude laptops do we have out of warranty?', color: '#7dd3fc' },
+    { text: 'Add PTO for Michael, from 1st of May until the 14th', color: '#c084fc' },
+    { text: 'Send HP vendor an email, asking them if they are available to come on site on Tuesday', color: '#4ade80' },
+    { text: 'How do I get access to the network-security Slack channel?', color: '#22d3ee' },
+    { text: 'Add Martha as the AV Technician for the Paris Office. Her email is martha@milecore.com', color: '#facc15' },
+    { text: 'Add 6 hours of work for Jim today, on the issue we have with the Cisco Access Points', color: '#fb923c' },
+    { text: 'Does the town hall in the canteen today need audio/video support?', color: '#f472b6' },
 ];
 
-export function ChatPage({ personId = 1 }) {
+export function ChatPage({ personId = 1, displayName, switchLabel, onSwitchUser }) {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const [sessionId, setSessionId] = useState(null);
     const [homeSiteChecked, setHomeSiteChecked] = useState(false);
     const [sessions, setSessions] = useState([]);
@@ -158,7 +157,7 @@ export function ChatPage({ personId = 1 }) {
     useEffect(() => {
         if (messages.length > 0) return;
         const id = setInterval(() => {
-            setBadgeIndex(prev => (prev + 1) % BADGES.length);
+            setBadgeIndex(prev => (prev + 1) % PROMPTS.length);
         }, 3000);
         return () => clearInterval(id);
     }, [messages.length]);
@@ -310,9 +309,7 @@ export function ChatPage({ personId = 1 }) {
         }
     };
 
-    const badge1 = BADGES[badgeIndex];
-    const badge2 = BADGES[(badgeIndex + 1) % BADGES.length];
-    const badge3 = BADGES[(badgeIndex + 2) % BADGES.length];
+    const prompt = PROMPTS[badgeIndex];
 
     return (
         <div className="chat-layout">
@@ -340,6 +337,18 @@ export function ChatPage({ personId = 1 }) {
                         </div>
                     )}
                 </div>
+                <div className="sidebar-user">
+                    <span className="nav-username">{displayName}</span>
+                    <div className="sidebar-user-row">
+                        <button className="btn btn-sm" onClick={onSwitchUser}>{switchLabel}</button>
+                        <button className="btn btn-sm" onClick={() => setSettingsOpen(true)} title="Settings">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
             </div>
             <div className="chat-container">
                 <div className="chat-messages">
@@ -349,11 +358,9 @@ export function ChatPage({ personId = 1 }) {
                                 <img src={logo} alt="Milestone Technologies" className="empty-state-logo" />
                             </div>
                             <div className="empty-state-brand">MileCore</div>
-                            <div className="empty-state-sub">It simply works.</div>
+                            <div className="empty-state-sub">Try asking...</div>
                             <div className="capability-badges-row" key={badgeIndex}>
-                                <span className="capability-badge" style={{ borderColor: badge1.color }}>{badge1.text}</span>
-                                <span className="capability-badge" style={{ borderColor: badge2.color }}>{badge2.text}</span>
-                                <span className="capability-badge" style={{ borderColor: badge3.color }}>{badge3.text}</span>
+                                <span className="capability-badge" style={{ borderColor: prompt.color }}>{prompt.text}</span>
                             </div>
                         </div>
                     )}
@@ -434,6 +441,14 @@ export function ChatPage({ personId = 1 }) {
                     </div>
                 </div>
             </div>
+            <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Settings">
+                <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                    This is a demo so unfortunately, the only settings you can do, is set some realistic expectations.
+                </p>
+                <div className="modal-actions">
+                    <button className="btn btn-primary" onClick={() => setSettingsOpen(false)}>OK</button>
+                </div>
+            </Modal>
         </div>
     );
 }

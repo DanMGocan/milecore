@@ -1,0 +1,7 @@
+site_id,event_type,title,description,start_time,end_time,status,impact_level,needs_support,important
+1,vendor_visit,TechServe quarterly hardware review,TechServe account manager on-site to review hardware refresh plan and warranty renewals,2026-03-18 10:00:00,2026-03-18 12:00:00,planned,low,1,0
+1,maintenance,UPS firmware upgrade — Dublin server room,Scheduled UPS firmware update requiring 15-min switchover to bypass mode,2026-03-22 06:00:00,2026-03-22 07:00:00,planned,high,1,1
+2,training,Cybersecurity awareness training — Austin,Mandatory phishing awareness session for all Austin staff,2026-03-20 14:00:00,2026-03-20 15:30:00,planned,low,0,0
+3,client_meeting,Acme Corp quarterly business review,QBR with Acme Corp leadership — boardroom AV setup required,2026-03-14 09:00:00,2026-03-14 11:00:00,confirmed,medium,1,1
+2,maintenance,Austin HVAC inspection for server closet,Facilities team inspecting HVAC after overheating incident,2026-03-17 08:00:00,2026-03-17 10:00:00,planned,medium,0,0
+3,vendor_visit,FurnishCo office furniture delivery,New standing desks for London hot desk area — delivery and setup,2026-03-25 09:00:00,2026-03-25 17:00:00,planned,low,0,0
