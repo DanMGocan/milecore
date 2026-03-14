@@ -351,6 +351,21 @@ CREATE TABLE IF NOT EXISTS vendor_contracts (
 );
 
 -- Knowledge & Metadata
+CREATE TABLE IF NOT EXISTS misc_knowledge (
+    id INTEGER PRIMARY KEY,
+    site_id INTEGER,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    keywords TEXT,              -- comma-separated, AI-generated (e.g. "kitchen, closure, office_space")
+    people_involved TEXT,       -- free text: names/roles if people are relevant
+    effective_date DATE,        -- when this becomes relevant (optional)
+    expiry_date DATE,           -- when it stops being relevant (optional)
+    important INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (site_id) REFERENCES sites(id)
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_articles (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
@@ -435,6 +450,9 @@ BEGIN UPDATE inventory_stock SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.i
 CREATE TRIGGER IF NOT EXISTS knowledge_articles_updated_at AFTER UPDATE ON knowledge_articles
 BEGIN UPDATE knowledge_articles SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
 
+CREATE TRIGGER IF NOT EXISTS misc_knowledge_updated_at AFTER UPDATE ON misc_knowledge
+BEGIN UPDATE misc_knowledge SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
 -- Query Approval System
 CREATE TABLE IF NOT EXISTS approval_rules (
     id INTEGER PRIMARY KEY,
@@ -464,7 +482,7 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
 
 -- Seed data
 INSERT OR IGNORE INTO companies (id, name, type) VALUES (1, 'Milestone', 'employer');
-INSERT OR IGNORE INTO people (id, first_name, last_name, employer_id, is_user, username, user_role)
-    VALUES (1, 'Dan', 'Admin', 1, 1, 'dan', 'admin');
+INSERT OR IGNORE INTO people (id, first_name, last_name, email, employer_id, is_user, username, user_role, is_supervisor, site_id)
+    VALUES (1, 'Dan', 'Gocan', 'dan.gocan@milestone.tech', 1, 1, 'dan', 'admin', 1, 1);
 INSERT OR IGNORE INTO people (id, first_name, last_name, employer_id, is_user, username, user_role)
     VALUES (2, 'Bob', 'User', 1, 1, 'bob', 'user');

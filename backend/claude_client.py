@@ -127,6 +127,28 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
         if tool_name in ("execute_sql", "create_table"):
             sql = block["input"]["sql"]
             explanation = block["input"].get("explanation", "")
+            sql_upper = sql.strip().upper()
+
+            # Check if this is a data write that should go through approval
+            is_data_write = sql_upper.startswith(("INSERT", "UPDATE", "DELETE"))
+            if is_data_write and tool_name == "execute_sql":
+                rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
+                if rules.get("rows"):
+                    validation = validate_query(sql)
+                    if not validation.get("valid"):
+                        result = {"error": f"SQL validation failed: {validation['error']}"}
+                    else:
+                        first_rule = rules["rows"][0]
+                        result = execute_query(
+                            "INSERT INTO pending_approvals (sql_statement, explanation, matched_rule_id, matched_rule_description) VALUES (?, ?, ?, ?)",
+                            [sql, explanation, first_rule["id"], first_rule["description"]],
+                        )
+                        result["queued"] = True
+                        result["approval_id"] = result.get("lastrowid")
+                    sql_log.append({"tool": tool_name, "sql": sql, "explanation": explanation, "result": result})
+                    tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                    continue
+
             result = execute_query(sql)
 
             sql_log.append({
@@ -138,10 +160,8 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
 
             if tool_name == "create_table":
                 clear_schema_cache()
-            elif tool_name == "execute_sql":
-                sql_upper = sql.strip().upper()
-                if sql_upper.startswith(("CREATE", "DROP", "ALTER")):
-                    clear_schema_cache()
+            elif sql_upper.startswith(("CREATE", "DROP", "ALTER")):
+                clear_schema_cache()
 
             tool_results.append({
                 "type": "tool_result",
@@ -217,11 +237,18 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 if approval.get("rows"):
                     stored_sql = approval["rows"][0]["sql_statement"]
                     exec_result = execute_query(stored_sql)
-                    execute_query(
-                        "UPDATE pending_approvals SET status = 'approved', review_note = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
-                        [inp.get("note", ""), approval_id],
-                    )
-                    result = {"approved": True, "approval_id": approval_id, "execution_result": exec_result}
+                    if "error" in exec_result:
+                        execute_query(
+                            "UPDATE pending_approvals SET status = 'failed', review_note = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            [f"Execution failed: {exec_result['error']}", approval_id],
+                        )
+                        result = {"approved": False, "approval_id": approval_id, "execution_error": exec_result["error"]}
+                    else:
+                        execute_query(
+                            "UPDATE pending_approvals SET status = 'approved', review_note = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            [inp.get("note", ""), approval_id],
+                        )
+                        result = {"approved": True, "approval_id": approval_id, "execution_result": exec_result}
                 else:
                     result = {"error": f"Approval #{approval_id} not found or already reviewed"}
             elif action == "reject":
@@ -242,7 +269,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             })
 
         elif tool_name == "import_csv":
-            from backend.routes.upload import generate_import_sql
+            from backend.routes.upload import generate_import_sql, remove_staged_file
 
             inp = block["input"]
             gen = generate_import_sql(inp["file_id"], inp["table"], inp["column_mapping"])
@@ -255,6 +282,8 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 if not validation.get("valid"):
                     result = {"error": f"SQL validation failed: {validation['error']}"}
                 else:
+                    # Validation passed — remove staged file so it can't be re-imported
+                    remove_staged_file(inp["file_id"])
                     # Check if any approval rules are active
                     rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
                     if rules.get("rows"):

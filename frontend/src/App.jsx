@@ -10,6 +10,7 @@ export default function App() {
     const [page, setPage] = useState('chat');
     const [logoutModal, setLogoutModal] = useState(false);
     const [pendingCount, setPendingCount] = useState(0);
+    const [reportStatus, setReportStatus] = useState(null); // null | 'sending' | 'Sent to 2' | 'Error'
     const [personId, setPersonId] = useState(() => {
         const stored = localStorage.getItem('personId');
         return stored ? Number(stored) : 1;
@@ -34,6 +35,22 @@ export default function App() {
         const interval = setInterval(fetchCount, 30000);
         return () => clearInterval(interval);
     }, []);
+
+    const sendDailyReport = async () => {
+        setReportStatus('sending');
+        try {
+            const res = await fetch('/api/admin/send-daily-report', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                setReportStatus(`Sent to ${data.details?.length ?? 0}`);
+            } else {
+                setReportStatus('Error');
+            }
+        } catch {
+            setReportStatus('Error');
+        }
+        setTimeout(() => setReportStatus(null), 3000);
+    };
 
     const switchUser = () => {
         const newId = personId === 1 ? 2 : 1;
@@ -63,6 +80,15 @@ export default function App() {
                 </div>
                 <div className="nav-user">
                     <span className="nav-username">{displayName}</span>
+                    {currentUser?.role === 'admin' && (
+                        <button
+                            className="btn btn-sm"
+                            onClick={sendDailyReport}
+                            disabled={reportStatus === 'sending'}
+                        >
+                            {reportStatus === 'sending' ? 'Sending...' : reportStatus ?? 'Send Daily Report'}
+                        </button>
+                    )}
                     <button className="btn btn-sm" onClick={switchUser}>{switchLabel}</button>
                 </div>
             </nav>

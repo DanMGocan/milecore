@@ -39,14 +39,6 @@ def main():
         print(f"Creating new database: {db_path}")
         init_db(schema_path)
 
-    # Seed default admin user if not exists
-    result = execute_query("SELECT id FROM users WHERE username = 'dan'")
-    if not result.get("rows"):
-        execute_query(
-            "INSERT INTO users (username, display_name, role) VALUES ('dan', 'Dan', 'admin')"
-        )
-        print("Seeded default admin user: Dan")
-
     # Build frontend
     build_frontend()
 

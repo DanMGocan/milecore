@@ -1,5 +1,7 @@
 import csv
 import io
+import json
+import os
 import re
 import uuid
 
@@ -9,7 +11,28 @@ from backend.database import execute_query, get_tables
 
 router = APIRouter()
 
-_staged_files: dict[str, dict] = {}  # file_id -> {rows, headers, filename}
+TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "temp")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+
+def _staged_path(file_id: str) -> str:
+    """Return the on-disk path for a staged file."""
+    return os.path.join(TEMP_DIR, f"{file_id}.json")
+
+
+def _save_staged(file_id: str, data: dict) -> None:
+    """Persist staged file data to disk."""
+    with open(_staged_path(file_id), "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def _load_staged(file_id: str) -> dict | None:
+    """Load staged file data from disk. Returns None if not found."""
+    path = _staged_path(file_id)
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 @router.post("/upload/stage")
@@ -32,7 +55,7 @@ async def stage_csv(file: UploadFile = File(...)):
 
     file_id = str(uuid.uuid4())
     headers = list(rows[0].keys())
-    _staged_files[file_id] = {"rows": rows, "headers": headers, "filename": file.filename}
+    _save_staged(file_id, {"rows": rows, "headers": headers, "filename": file.filename})
 
     return {
         "file_id": file_id,
@@ -45,7 +68,7 @@ async def stage_csv(file: UploadFile = File(...)):
 
 def import_staged_csv(file_id: str, table: str, column_mapping: dict[str, str]) -> dict:
     """Import a staged CSV into the database with column remapping."""
-    staged = _staged_files.pop(file_id, None)
+    staged = _load_staged(file_id)
     if staged is None:
         return {"error": f"No staged file found with id {file_id}"}
 
@@ -88,9 +111,16 @@ def import_staged_csv(file_id: str, table: str, column_mapping: dict[str, str]) 
     }
 
 
+def remove_staged_file(file_id: str) -> None:
+    """Remove a staged file after it has been successfully processed."""
+    path = _staged_path(file_id)
+    if os.path.exists(path):
+        os.remove(path)
+
+
 def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str]) -> dict:
-    """Generate a complete INSERT statement from a staged CSV. Pops the staged file."""
-    staged = _staged_files.pop(file_id, None)
+    """Generate a complete INSERT statement from a staged CSV."""
+    staged = _load_staged(file_id)
     if staged is None:
         return {"error": f"No staged file found with id {file_id}"}
     if not re.match(r"^\w+$", table):

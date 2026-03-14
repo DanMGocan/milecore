@@ -1,6 +1,7 @@
 import re
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from backend.database import (
@@ -11,6 +12,12 @@ from backend.database import (
 )
 
 router = APIRouter(prefix="/tables")
+
+
+@router.get("/download")
+async def download_database():
+    from backend.config import DATABASE_PATH
+    return FileResponse(DATABASE_PATH, filename="milecore.db", media_type="application/octet-stream")
 
 
 def _validate_name(name: str) -> str:

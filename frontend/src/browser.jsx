@@ -254,6 +254,7 @@ export function BrowserPage() {
             <div className="browser-sidebar">
                 <div className="sidebar-header">
                     <h3>Tables</h3>
+                    <a href="/api/tables/download" download className="btn btn-sm">Download DB</a>
                     <button className="btn btn-sm btn-primary" onClick={() => setShowCreate(true)}>+ New</button>
                 </div>
                 <div className="sidebar-list">

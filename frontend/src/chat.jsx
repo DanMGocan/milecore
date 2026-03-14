@@ -51,7 +51,20 @@ function SqlBlock({ operations }) {
     );
 }
 
-function ChatMessage({ role, text, sql }) {
+function FileAttachment({ file }) {
+    return (
+        <div className="file-attachment">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <span className="file-attachment-name">{file.name}</span>
+            <span className="file-attachment-format">{file.format}</span>
+        </div>
+    );
+}
+
+function ChatMessage({ role, text, sql, file }) {
     const cls = role === 'user' ? 'message message-user'
         : role === 'error' ? 'message message-error'
         : role === 'loading' ? 'message message-loading'
@@ -59,11 +72,25 @@ function ChatMessage({ role, text, sql }) {
 
     return (
         <div className={cls}>
+            {file && <FileAttachment file={file} />}
             {role === 'assistant' ? <Markdown>{text}</Markdown> : text}
             {role === 'assistant' && <SqlBlock operations={sql} />}
         </div>
     );
 }
+
+const BADGES = [
+    { text: 'Add People', color: '#facc15' },
+    { text: 'Manage Assets', color: '#7dd3fc' },
+    { text: 'Send Emails', color: '#4ade80' },
+    { text: 'Track Issues', color: '#f87171' },
+    { text: 'Log Work', color: '#c084fc' },
+    { text: 'Import CSV', color: '#fb923c' },
+    { text: 'Share Knowledge', color: '#22d3ee' },
+    { text: 'Manage Inventory', color: '#f472b6' },
+    { text: 'Schedule Events', color: '#a3e635' },
+    { text: 'Track Vendors', color: '#fbbf24' },
+];
 
 export function ChatPage({ personId = 1 }) {
     const [messages, setMessages] = useState([]);
@@ -73,6 +100,7 @@ export function ChatPage({ personId = 1 }) {
     const [homeSiteChecked, setHomeSiteChecked] = useState(false);
     const [sessions, setSessions] = useState([]);
     const [pendingFile, setPendingFile] = useState(null);
+    const [badgeIndex, setBadgeIndex] = useState(0);
     const messagesEnd = useRef(null);
     const fileRef = useRef(null);
     const [pics] = useState(() => {
@@ -115,6 +143,14 @@ export function ChatPage({ personId = 1 }) {
         }
     }, [messages, loading]);
 
+    useEffect(() => {
+        if (messages.length > 0) return;
+        const id = setInterval(() => {
+            setBadgeIndex(prev => (prev + 1) % BADGES.length);
+        }, 3000);
+        return () => clearInterval(id);
+    }, [messages.length]);
+
     const loadSession = async (sid) => {
         try {
             const res = await fetch(`/api/sessions/${sid}`);
@@ -134,10 +170,15 @@ export function ChatPage({ personId = 1 }) {
         if ((!text && !pendingFile) || loading) return;
 
         const fileToUpload = pendingFile;
-        const displayText = text || `Uploaded ${fileToUpload?.name}`;
+        const displayText = text || '';
         setInput('');
         setPendingFile(null);
-        setMessages(prev => [...prev, { role: 'user', text: displayText }]);
+        const userMsg = { role: 'user', text: displayText };
+        if (fileToUpload) {
+            const ext = fileToUpload.name.split('.').pop().toUpperCase();
+            userMsg.file = { name: fileToUpload.name, format: ext };
+        }
+        setMessages(prev => [...prev, userMsg]);
         setLoading(true);
 
         try {
@@ -279,13 +320,20 @@ export function ChatPage({ personId = 1 }) {
                             <img src={logo} alt="Milestone Technologies" className="empty-state-logo" />
                             <div className="empty-state-brand">MileCore</div>
                             <div className="empty-state-sub">Site Ops Assistant</div>
+                            <span
+                                className="capability-badge"
+                                key={badgeIndex}
+                                style={{ borderColor: BADGES[badgeIndex].color }}
+                            >
+                                {BADGES[badgeIndex].text}
+                            </span>
                         </div>
                     )}
                     {messages.map((m, i) => {
                         if (m.role === 'user') {
                             return (
                                 <div key={i} className="message-row message-row-user">
-                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} />
+                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} file={m.file} />
                                     <img src={profilePics[pics.user]} alt="You" className="profile-pic" />
                                 </div>
                             );

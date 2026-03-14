@@ -186,7 +186,9 @@ def init_db(schema_path: str) -> None:
         schema_sql = f.read()
 
     conn = get_connection()
+    conn.execute("PRAGMA foreign_keys=OFF")
     conn.executescript(schema_sql)
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.commit()
 
 
