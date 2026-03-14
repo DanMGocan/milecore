@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Modal } from './components';
 
+function TableIcon() {
+    return (
+        <svg className="table-item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <line x1="3" y1="15" x2="21" y2="15"/>
+            <line x1="9" y1="3" x2="9" y2="21"/>
+        </svg>
+    );
+}
+
 function CreateTableModal({ open, onClose, onCreated }) {
     const [name, setName] = useState('');
     const [columns, setColumns] = useState([{ name: '', type: 'TEXT' }]);
@@ -254,7 +265,6 @@ export function BrowserPage() {
             <div className="browser-sidebar">
                 <div className="sidebar-header">
                     <h3>Tables</h3>
-                    <a href="/api/tables/download" download className="btn btn-sm">Download DB</a>
                     <button className="btn btn-sm btn-primary" onClick={() => setShowCreate(true)}>+ New</button>
                 </div>
                 <div className="sidebar-list">
@@ -264,7 +274,8 @@ export function BrowserPage() {
                             className={'table-item' + (selected === t ? ' active' : '')}
                             onClick={() => selectTable(t)}
                         >
-                            {t}
+                            <TableIcon />
+                            <span className="table-item-name">{t}</span>
                         </div>
                     ))}
                 </div>
@@ -303,7 +314,7 @@ export function BrowserPage() {
                         </div>
 
                         {/* Data grid */}
-                        <div className="browser-content">
+                        <div className="browser-content browser-content-fade" key={selected + '-' + offset}>
                             {rows.length > 0 ? (
                                 <table className="data-grid">
                                     <thead>
@@ -334,6 +345,11 @@ export function BrowserPage() {
                                 </table>
                             ) : (
                                 <div className="empty-state">
+                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}>
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                        <line x1="3" y1="9" x2="21" y2="9"/>
+                                        <line x1="9" y1="3" x2="9" y2="21"/>
+                                    </svg>
                                     <div>No rows in this table</div>
                                 </div>
                             )}
@@ -349,7 +365,7 @@ export function BrowserPage() {
                                 >
                                     Prev
                                 </button>
-                                <span>Page {currentPage} of {totalPages}</span>
+                                <span>Page <span className="page-indicator">{currentPage}</span> of {totalPages}</span>
                                 <button
                                     className="btn btn-sm"
                                     disabled={currentPage >= totalPages}
@@ -362,7 +378,9 @@ export function BrowserPage() {
                     </>
                 ) : (
                     <div className="empty-state">
-                        <div className="empty-state-icon">{'\uD83D\uDDC4\uFE0F'}</div>
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}>
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                        </svg>
                         <div>Select a table to browse</div>
                     </div>
                 )}

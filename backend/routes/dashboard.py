@@ -1,6 +1,21 @@
+import json
+import os
+
 from fastapi import APIRouter
 
-from backend.database import get_connection, _lock
+from backend.config import SCHEMA_PATH
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _get_last_push() -> str | None:
+    path = os.path.join(_PROJECT_ROOT, "last_push.json")
+    try:
+        with open(path) as f:
+            return json.load(f).get("timestamp")
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return None
+from backend.database import get_connection, _lock, reset_db
 
 router = APIRouter(prefix="/dashboard")
 
@@ -41,6 +56,7 @@ async def overview():
             "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1)"
             ")"
         ),
+        "last_push": _get_last_push(),
     }
 
 
@@ -85,3 +101,12 @@ async def staff_per_site():
         "GROUP BY s.id, s.name ORDER BY count DESC"
     )
     return {"data": data}
+
+
+@router.post("/reset-database")
+async def reset_database():
+    try:
+        reset_db(SCHEMA_PATH)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

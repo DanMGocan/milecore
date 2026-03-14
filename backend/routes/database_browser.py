@@ -1,11 +1,18 @@
+import io
+import os
 import re
+import sqlite3
+import tempfile
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi.responses import FileResponse, StreamingResponse
+from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel
 
 from backend.database import (
     execute_query,
+    get_all_table_rows,
+    get_connection,
     get_table_rows,
     get_table_schema,
     get_tables,
@@ -13,11 +20,175 @@ from backend.database import (
 
 router = APIRouter(prefix="/tables")
 
+SKIP_TABLES = {"audit_log", "app_settings", "chat_sessions", "chat_messages", "pending_approvals"}
+
 
 @router.get("/download")
 async def download_database():
     from backend.config import DATABASE_PATH
     return FileResponse(DATABASE_PATH, filename="milecore.db", media_type="application/octet-stream")
+
+
+@router.get("/export")
+async def export_excel():
+    wb = Workbook()
+    wb.remove(wb.active)
+    for table in get_tables():
+        if table in SKIP_TABLES:
+            continue
+        columns, rows = get_all_table_rows(table)
+        ws = wb.create_sheet(title=table)
+        ws.append(columns)
+        for row in rows:
+            ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=milecore_export.xlsx"},
+    )
+
+
+@router.post("/import")
+async def import_excel(file: UploadFile = File(...)):
+    if not file.filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are accepted")
+    contents = await file.read()
+    wb = load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+    existing_tables = set(get_tables())
+    summary = {"tables_imported": 0, "rows_per_table": {}, "skipped_sheets": [], "errors": []}
+
+    conn = get_connection()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        for sheet_name in wb.sheetnames:
+            if sheet_name in SKIP_TABLES or sheet_name not in existing_tables:
+                summary["skipped_sheets"].append(sheet_name)
+                continue
+            ws = wb[sheet_name]
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
+                summary["skipped_sheets"].append(sheet_name)
+                continue
+            headers = rows[0]
+            data_rows = rows[1:]
+            # Clear existing data
+            result = execute_query(f"DELETE FROM {sheet_name}")
+            if "error" in result:
+                summary["errors"].append(f"{sheet_name}: {result['error']}")
+                continue
+            # Insert rows
+            placeholders = ", ".join(["?"] * len(headers))
+            col_names = ", ".join(headers)
+            inserted = 0
+            for row in data_rows:
+                result = execute_query(
+                    f"INSERT INTO {sheet_name} ({col_names}) VALUES ({placeholders})",
+                    list(row),
+                )
+                if "error" in result:
+                    summary["errors"].append(f"{sheet_name} row: {result['error']}")
+                else:
+                    inserted += 1
+            summary["rows_per_table"][sheet_name] = inserted
+            summary["tables_imported"] += 1
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+        wb.close()
+    return summary
+
+
+@router.post("/import-merge")
+async def import_merge(file: UploadFile = File(...)):
+    if not file.filename.endswith((".xlsx", ".db")):
+        raise HTTPException(status_code=400, detail="Only .xlsx and .db files are accepted")
+
+    contents = await file.read()
+    existing_tables = set(get_tables())
+    summary = {"tables_imported": 0, "rows_per_table": {}, "skipped_sheets": [], "errors": []}
+
+    conn = get_connection()
+    conn.execute("PRAGMA foreign_keys=OFF")
+
+    try:
+        if file.filename.endswith(".xlsx"):
+            wb = load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+            try:
+                for sheet_name in wb.sheetnames:
+                    if sheet_name in SKIP_TABLES or sheet_name not in existing_tables:
+                        summary["skipped_sheets"].append(sheet_name)
+                        continue
+                    ws = wb[sheet_name]
+                    rows = list(ws.iter_rows(values_only=True))
+                    if not rows:
+                        summary["skipped_sheets"].append(sheet_name)
+                        continue
+                    headers = rows[0]
+                    data_rows = rows[1:]
+                    placeholders = ", ".join(["?"] * len(headers))
+                    col_names = ", ".join(headers)
+                    inserted = 0
+                    for row in data_rows:
+                        result = execute_query(
+                            f"INSERT OR IGNORE INTO {sheet_name} ({col_names}) VALUES ({placeholders})",
+                            list(row),
+                        )
+                        if "error" in result:
+                            summary["errors"].append(f"{sheet_name} row: {result['error']}")
+                        else:
+                            inserted += result.get("rowcount", 0)
+                    summary["rows_per_table"][sheet_name] = inserted
+                    summary["tables_imported"] += 1
+            finally:
+                wb.close()
+
+        elif file.filename.endswith(".db"):
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".db")
+            try:
+                os.write(tmp_fd, contents)
+                os.close(tmp_fd)
+                src = sqlite3.connect(tmp_path)
+                src_cursor = src.cursor()
+                src_tables = [
+                    r[0] for r in src_cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                ]
+                for table in src_tables:
+                    if table in SKIP_TABLES or table not in existing_tables:
+                        summary["skipped_sheets"].append(table)
+                        continue
+                    src_rows = src_cursor.execute(f"SELECT * FROM {table}").fetchall()
+                    if not src_rows:
+                        summary["skipped_sheets"].append(table)
+                        continue
+                    col_names = [
+                        desc[0] for desc in src_cursor.description
+                    ]
+                    placeholders = ", ".join(["?"] * len(col_names))
+                    col_str = ", ".join(col_names)
+                    inserted = 0
+                    for row in src_rows:
+                        result = execute_query(
+                            f"INSERT OR IGNORE INTO {table} ({col_str}) VALUES ({placeholders})",
+                            list(row),
+                        )
+                        if "error" in result:
+                            summary["errors"].append(f"{table} row: {result['error']}")
+                        else:
+                            inserted += result.get("rowcount", 0)
+                    summary["rows_per_table"][table] = inserted
+                    summary["tables_imported"] += 1
+                src.close()
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+    return summary
 
 
 def _validate_name(name: str) -> str:

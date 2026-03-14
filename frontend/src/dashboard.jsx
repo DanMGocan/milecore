@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell,
     ResponsiveContainer, CartesianGrid,
@@ -11,10 +11,18 @@ const tooltipStyle = {
     labelStyle: { color: '#9ca0b0' },
 };
 
-function StatCard({ label, value }) {
+const CARD_ACCENTS = {
+    'Active Assets': '#6c8cff',
+    'Open Requests': '#4ade80',
+    'Open Issues': '#f87171',
+    'Events This Week': '#fbbf24',
+    'Flagged Important': '#a78bfa',
+};
+
+function StatCard({ label, value, accent }) {
     return (
-        <div className="dashboard-card">
-            <div className="dashboard-card-value">{value ?? '—'}</div>
+        <div className="dashboard-card" style={{ borderTop: `3px solid ${accent || 'var(--accent)'}` }}>
+            <div className="dashboard-card-value">{value ?? '\u2014'}</div>
             <div className="dashboard-card-label">{label}</div>
         </div>
     );
@@ -29,13 +37,47 @@ function ChartBox({ title, children }) {
     );
 }
 
-export function DashboardPage() {
+function EmptyChart() {
+    return (
+        <div className="empty-chart">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"/>
+                <line x1="12" y1="20" x2="12" y2="4"/>
+                <line x1="6" y1="20" x2="6" y2="14"/>
+                <line x1="2" y1="20" x2="22" y2="20"/>
+            </svg>
+            <span>No data yet</span>
+        </div>
+    );
+}
+
+export function DashboardPage({ currentUser }) {
     const [overview, setOverview] = useState(null);
     const [assets, setAssets] = useState([]);
     const [issues, setIssues] = useState({ by_status: [], by_severity: [] });
     const [staff, setStaff] = useState([]);
+    const [refreshedAt, setRefreshedAt] = useState(null);
+    const [reportStatus, setReportStatus] = useState(null);
+    const [importing, setImporting] = useState(false);
+    const importRef = useRef(null);
 
-    useEffect(() => {
+    const sendDailyReport = async () => {
+        setReportStatus('sending');
+        try {
+            const res = await fetch('/api/admin/send-daily-report', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                setReportStatus(`Sent to ${data.details?.length ?? 0}`);
+            } else {
+                setReportStatus('Error');
+            }
+        } catch {
+            setReportStatus('Error');
+        }
+        setTimeout(() => setReportStatus(null), 3000);
+    };
+
+    function loadDashboard() {
         Promise.all([
             fetch('/api/dashboard/overview').then(r => r.json()),
             fetch('/api/dashboard/assets-by-period').then(r => r.json()),
@@ -46,19 +88,61 @@ export function DashboardPage() {
             setAssets(as.data || []);
             setIssues(is_);
             setStaff(st.data || []);
+            setRefreshedAt(new Date());
         }).catch(console.error);
-    }, []);
+    }
+
+    useEffect(() => { loadDashboard(); }, []);
+
+    const handleImportMerge = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        e.target.value = '';
+        setImporting(true);
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            const res = await fetch('/api/tables/import-merge', { method: 'POST', body: form });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            const msg = `Merged ${data.tables_imported} table(s).\n` +
+                Object.entries(data.rows_per_table).map(([t, n]) => `  ${t}: ${n} new rows`).join('\n') +
+                (data.skipped_sheets.length ? `\nSkipped: ${data.skipped_sheets.join(', ')}` : '') +
+                (data.errors.length ? `\nErrors:\n  ${data.errors.join('\n  ')}` : '');
+            alert(msg);
+            loadDashboard();
+        } catch (err) { alert('Import failed: ' + err.message); }
+        setImporting(false);
+    };
+
+    function handleResetDatabase() {
+        if (!window.confirm('This will permanently delete ALL data and recreate empty tables. Continue?')) return;
+        fetch('/api/dashboard/reset-database', { method: 'POST' })
+            .then(r => r.json())
+            .then(res => {
+                if (res.ok) loadDashboard();
+                else alert('Reset failed: ' + (res.error || 'Unknown error'));
+            })
+            .catch(err => alert('Reset failed: ' + err.message));
+    }
+
+    const refreshedLabel = refreshedAt
+        ? `Last refreshed: ${refreshedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        : '';
 
     return (
         <div className="dashboard-container">
-            <h2 className="dashboard-title">Dashboard</h2>
+            <div className="dashboard-header">
+                <h2 className="dashboard-title">Dashboard</h2>
+                {refreshedLabel && <span className="dashboard-refreshed">{refreshedLabel}</span>}
+            </div>
 
             <div className="dashboard-cards">
-                <StatCard label="Active Assets" value={overview?.active_assets} />
-                <StatCard label="Open Requests" value={overview?.open_requests} />
-                <StatCard label="Open Issues" value={overview?.open_issues} />
-                <StatCard label="Events This Week" value={overview?.events_this_week} />
-                <StatCard label="Flagged Important" value={overview?.important_items} />
+                <StatCard label="Active Assets" value={overview?.active_assets} accent={CARD_ACCENTS['Active Assets']} />
+                <StatCard label="Open Requests" value={overview?.open_requests} accent={CARD_ACCENTS['Open Requests']} />
+                <StatCard label="Open Issues" value={overview?.open_issues} accent={CARD_ACCENTS['Open Issues']} />
+                <StatCard label="Events This Week" value={overview?.events_this_week} accent={CARD_ACCENTS['Events This Week']} />
+                <StatCard label="Flagged Important" value={overview?.important_items} accent={CARD_ACCENTS['Flagged Important']} />
             </div>
 
             <div className="dashboard-grid">
@@ -127,14 +211,55 @@ export function DashboardPage() {
                     ) : <EmptyChart />}
                 </ChartBox>
             </div>
-        </div>
-    );
-}
 
-function EmptyChart() {
-    return (
-        <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-            No data yet
+            {overview?.last_push && (
+                <p className="dashboard-footer-text">
+                    Repository last updated at: {new Date(overview.last_push).toLocaleString()}
+                </p>
+            )}
+
+            <div className="dashboard-management">
+                <div className="dashboard-management-title">Database Management</div>
+                <div className="dashboard-management-row">
+                    <a href="/api/tables/download" download className="btn btn-sm">Download .db</a>
+                    <a href="/api/tables/export" download className="btn btn-sm">Export .xlsx</a>
+                    <button
+                        className="btn btn-sm btn-primary"
+                        disabled={importing}
+                        onClick={() => importRef.current?.click()}
+                    >
+                        {importing ? 'Importing...' : 'Import & Merge'}
+                    </button>
+                    <input
+                        type="file"
+                        accept=".xlsx,.db"
+                        ref={importRef}
+                        style={{ display: 'none' }}
+                        onChange={handleImportMerge}
+                    />
+                </div>
+                <div className="dashboard-management-hint">
+                    Import merges new rows into existing tables. Duplicates are skipped.
+                </div>
+            </div>
+
+            <div className="dashboard-management">
+                <div className="dashboard-management-title">Demo-only</div>
+                <div className="dashboard-management-row">
+                    {currentUser?.role === 'admin' && (
+                        <button
+                            className="btn btn-sm"
+                            onClick={sendDailyReport}
+                            disabled={reportStatus === 'sending'}
+                        >
+                            {reportStatus === 'sending' ? 'Sending...' : reportStatus ?? 'Send Daily Report'}
+                        </button>
+                    )}
+                    <button className="btn btn-sm btn-danger" onClick={handleResetDatabase}>
+                        Reset Database
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

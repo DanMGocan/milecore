@@ -163,6 +163,18 @@ def get_table_schema(table_name: str) -> list[dict[str, Any]]:
     ]
 
 
+def get_all_table_rows(table_name: str) -> tuple[list[str], list[tuple]]:
+    """Return (column_names, rows) for an entire table, without rowid."""
+    if not re.match(r"^\w+$", table_name):
+        return [], []
+    conn = get_connection()
+    with _lock:
+        cursor = conn.execute(f"SELECT * FROM {table_name}")
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+        rows = cursor.fetchall()
+    return columns, [tuple(row) for row in rows]
+
+
 def get_table_rows(table_name: str, limit: int = 50, offset: int = 0) -> dict[str, Any]:
     if not re.match(r"^\w+$", table_name):
         return {"error": "Invalid table name"}
@@ -178,6 +190,21 @@ def get_table_rows(table_name: str, limit: int = 50, offset: int = 0) -> dict[st
         rows = [dict(row) for row in cursor.fetchall()]
 
     return {"columns": columns, "rows": rows, "total": total}
+
+
+def reset_db(schema_path: str) -> None:
+    """Drop all tables and re-create from schema file."""
+    conn = get_connection()
+    with _lock:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for (name,) in tables:
+            conn.execute(f"DROP TABLE IF EXISTS {name}")
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys=ON")
+    init_db(schema_path)
 
 
 def init_db(schema_path: str) -> None:
@@ -201,7 +228,7 @@ def migrate_db(schema_path: str) -> None:
     conn = get_connection()
     important_tables = [
         "technical_issues", "requests", "events", "notes",
-        "changes", "work_logs", "assets", "inventory_transactions",
+        "changes", "work_logs", "assets", "inventory_transactions", "workflows",
     ]
     for table in important_tables:
         try:
@@ -209,3 +236,10 @@ def migrate_db(schema_path: str) -> None:
             conn.commit()
         except Exception:
             pass  # Column already exists
+
+    # Add needs_support column to events
+    try:
+        conn.execute("ALTER TABLE events ADD COLUMN needs_support INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass

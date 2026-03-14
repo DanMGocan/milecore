@@ -1,11 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import Markdown from 'react-markdown';
-import logo from '../static/img/Milestone Technologies Ireland.avif';
+import logo from '../static/img/milecore_logo.avif';
 import profilePic1 from '../static/img/profile_pic_1.jpg';
 import profilePic2 from '../static/img/profile_pic_2.jpg';
 import profilePic3 from '../static/img/profile_pic_3.jpg';
 
 const profilePics = [profilePic1, profilePic2, profilePic3];
+
+function ThinkingDots() {
+    return (
+        <div className="thinking-dots">
+            <span /><span /><span />
+        </div>
+    );
+}
 
 function SqlBlock({ operations }) {
     const [open, setOpen] = useState(false);
@@ -20,8 +28,8 @@ function SqlBlock({ operations }) {
 
     return (
         <div className="sql-block">
-            <button className="sql-toggle" onClick={() => setOpen(!open)}>
-                {open ? '\u25BC' : '\u25B6'} {label}
+            <button className={`sql-toggle${open ? ' open' : ''}`} onClick={() => setOpen(!open)}>
+                <span className="chevron">{'\u25B6'}</span> {label}
             </button>
             {open && (
                 <div className="sql-content">
@@ -64,17 +72,20 @@ function FileAttachment({ file }) {
     );
 }
 
-function ChatMessage({ role, text, sql, file }) {
+function ChatMessage({ role, text, sql, file, timestamp }) {
     const cls = role === 'user' ? 'message message-user'
         : role === 'error' ? 'message message-error'
         : role === 'loading' ? 'message message-loading'
         : 'message message-assistant';
 
     return (
-        <div className={cls}>
-            {file && <FileAttachment file={file} />}
-            {role === 'assistant' ? <Markdown>{text}</Markdown> : text}
-            {role === 'assistant' && <SqlBlock operations={sql} />}
+        <div>
+            <div className={cls}>
+                {file && <FileAttachment file={file} />}
+                {role === 'loading' ? <ThinkingDots /> : role === 'assistant' ? <Markdown>{text}</Markdown> : text}
+                {role === 'assistant' && <SqlBlock operations={sql} />}
+            </div>
+            {timestamp && <div className="message-timestamp">{timestamp}</div>}
         </div>
     );
 }
@@ -173,7 +184,7 @@ export function ChatPage({ personId = 1 }) {
         const displayText = text || '';
         setInput('');
         setPendingFile(null);
-        const userMsg = { role: 'user', text: displayText };
+        const userMsg = { role: 'user', text: displayText, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
         if (fileToUpload) {
             const ext = fileToUpload.name.split('.').pop().toUpperCase();
             userMsg.file = { name: fileToUpload.name, format: ext };
@@ -241,7 +252,7 @@ export function ChatPage({ personId = 1 }) {
                         if (!started) {
                             started = true;
                             setLoading(false);
-                            setMessages(prev => [...prev, { role: 'assistant', text: '', sql: [] }]);
+                            setMessages(prev => [...prev, { role: 'assistant', text: '', sql: [], timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
                         }
                         assistantText += data.text;
                         setMessages(prev => {
@@ -254,7 +265,7 @@ export function ChatPage({ personId = 1 }) {
                     } else if (eventType === 'done') {
                         if (!started) {
                             setLoading(false);
-                            setMessages(prev => [...prev, { role: 'assistant', text: assistantText, sql: sqlOps }]);
+                            setMessages(prev => [...prev, { role: 'assistant', text: assistantText, sql: sqlOps, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
                         } else {
                             setMessages(prev => {
                                 const next = [...prev];
@@ -289,6 +300,10 @@ export function ChatPage({ personId = 1 }) {
         }
     };
 
+    const badge1 = BADGES[badgeIndex];
+    const badge2 = BADGES[(badgeIndex + 1) % BADGES.length];
+    const badge3 = BADGES[(badgeIndex + 2) % BADGES.length];
+
     return (
         <div className="chat-layout">
             <div className="session-sidebar">
@@ -307,8 +322,11 @@ export function ChatPage({ personId = 1 }) {
                         </div>
                     ))}
                     {sessions.length === 0 && (
-                        <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: 13 }}>
-                            No conversations yet
+                        <div className="sidebar-empty">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            <span>No conversations yet. Start one!</span>
                         </div>
                     )}
                 </div>
@@ -317,23 +335,23 @@ export function ChatPage({ personId = 1 }) {
                 <div className="chat-messages">
                     {messages.length === 0 && homeSiteChecked && (
                         <div className="empty-state">
-                            <img src={logo} alt="Milestone Technologies" className="empty-state-logo" />
+                            <div className="empty-state-logo-wrap">
+                                <img src={logo} alt="Milestone Technologies" className="empty-state-logo" />
+                            </div>
                             <div className="empty-state-brand">MileCore</div>
-                            <div className="empty-state-sub">Site Ops Assistant</div>
-                            <span
-                                className="capability-badge"
-                                key={badgeIndex}
-                                style={{ borderColor: BADGES[badgeIndex].color }}
-                            >
-                                {BADGES[badgeIndex].text}
-                            </span>
+                            <div className="empty-state-sub">It simply works.</div>
+                            <div className="capability-badges-row" key={badgeIndex}>
+                                <span className="capability-badge" style={{ borderColor: badge1.color }}>{badge1.text}</span>
+                                <span className="capability-badge" style={{ borderColor: badge2.color }}>{badge2.text}</span>
+                                <span className="capability-badge" style={{ borderColor: badge3.color }}>{badge3.text}</span>
+                            </div>
                         </div>
                     )}
                     {messages.map((m, i) => {
                         if (m.role === 'user') {
                             return (
                                 <div key={i} className="message-row message-row-user">
-                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} file={m.file} />
+                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} file={m.file} timestamp={m.timestamp} />
                                     <img src={profilePics[pics.user]} alt="You" className="profile-pic" />
                                 </div>
                             );
@@ -342,56 +360,67 @@ export function ChatPage({ personId = 1 }) {
                             return (
                                 <div key={i} className="message-row message-row-assistant">
                                     <img src={profilePics[pics.ai]} alt="AI" className="profile-pic" />
-                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} />
+                                    <ChatMessage role={m.role} text={m.text} sql={m.sql} timestamp={m.timestamp} />
                                 </div>
                             );
                         }
                         return <ChatMessage key={i} role={m.role} text={m.text} sql={m.sql} />;
                     })}
-                    {loading && <ChatMessage role="loading" text="Thinking..." />}
+                    {loading && (
+                        <div className="message-row message-row-assistant">
+                            <img src={profilePics[pics.ai]} alt="AI" className="profile-pic" />
+                            <ChatMessage role="loading" />
+                        </div>
+                    )}
                     <div ref={messagesEnd} />
                 </div>
                 <div className="chat-input-container">
-                    <div className="chat-input-wrapper">
-                        <textarea
-                            className="chat-input"
-                            placeholder="Type a message..."
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            rows={1}
-                            disabled={loading}
-                        />
-                        <button
-                            className="upload-btn"
-                            onClick={() => fileRef.current && fileRef.current.click()}
-                            disabled={loading}
-                            title="Upload CSV"
-                        >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                            </svg>
-                        </button>
-                        <input
-                            ref={fileRef}
-                            type="file"
-                            accept=".csv"
-                            style={{ display: 'none' }}
-                            onChange={(e) => { stageFile(e.target.files[0]); e.target.value = ''; }}
-                        />
-                        {pendingFile && (
-                            <div className="file-chip">
-                                <span className="file-chip-name">{pendingFile.name}</span>
-                                <button className="file-chip-dismiss" onClick={() => setPendingFile(null)}>&times;</button>
-                            </div>
-                        )}
-                        <button
-                            className="send-btn"
-                            onClick={sendMessage}
-                            disabled={loading || (!input.trim() && !pendingFile)}
-                        >
-                            Send
-                        </button>
+                    <div className="chat-input-card">
+                        <div className="chat-input-wrapper">
+                            <textarea
+                                className="chat-input"
+                                placeholder="Type a message..."
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                rows={1}
+                                disabled={loading}
+                            />
+                            <button
+                                className="upload-btn"
+                                onClick={() => fileRef.current && fileRef.current.click()}
+                                disabled={loading}
+                                title="Upload CSV"
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                                </svg>
+                            </button>
+                            <input
+                                ref={fileRef}
+                                type="file"
+                                accept=".csv"
+                                style={{ display: 'none' }}
+                                onChange={(e) => { stageFile(e.target.files[0]); e.target.value = ''; }}
+                            />
+                            {pendingFile && (
+                                <div className="file-chip">
+                                    <span className="file-chip-name">{pendingFile.name}</span>
+                                    <button className="file-chip-dismiss" onClick={() => setPendingFile(null)}>&times;</button>
+                                </div>
+                            )}
+                            <button
+                                className="send-btn"
+                                onClick={sendMessage}
+                                disabled={loading || (!input.trim() && !pendingFile)}
+                                title="Send message"
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="22" y1="2" x2="11" y2="13"/>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -212,6 +212,7 @@ CREATE TABLE IF NOT EXISTS events (
     owner_person_id INTEGER,
     related_request_id INTEGER,
     impact_level TEXT,
+    needs_support INTEGER NOT NULL DEFAULT 0,  -- does the organizer need Milestone support?
     important INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -386,6 +387,23 @@ CREATE TABLE IF NOT EXISTS knowledge_articles (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS workflows (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    keywords TEXT,                    -- comma-separated, AI-generated
+    contact_person_id INTEGER,        -- FK people: who to ask about this workflow
+    added_by_person_id INTEGER,       -- FK people: who created this workflow
+    site_id INTEGER,                  -- optional: site-specific workflow
+    status TEXT DEFAULT 'published',  -- 'draft' | 'published' | 'archived'
+    important INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (contact_person_id) REFERENCES people(id),
+    FOREIGN KEY (added_by_person_id) REFERENCES people(id),
+    FOREIGN KEY (site_id) REFERENCES sites(id)
+);
+
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY,
     name TEXT UNIQUE NOT NULL
@@ -452,6 +470,9 @@ BEGIN UPDATE knowledge_articles SET updated_at = CURRENT_TIMESTAMP WHERE id = NE
 
 CREATE TRIGGER IF NOT EXISTS misc_knowledge_updated_at AFTER UPDATE ON misc_knowledge
 BEGIN UPDATE misc_knowledge SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+CREATE TRIGGER IF NOT EXISTS workflows_updated_at AFTER UPDATE ON workflows
+BEGIN UPDATE workflows SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
 
 -- Query Approval System
 CREATE TABLE IF NOT EXISTS approval_rules (
