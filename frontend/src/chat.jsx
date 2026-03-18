@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Markdown from 'react-markdown';
 import { Modal } from './components';
-import logo from '../static/img/milecore_logo.avif';
 import profilePic1 from '../static/img/profile_pic_1.jpg';
 import profilePic2 from '../static/img/profile_pic_2.jpg';
 import profilePic3 from '../static/img/profile_pic_3.jpg';
@@ -144,12 +143,12 @@ const PROMPTS = [
     { text: 'Add PTO for Michael, from 1st of May until the 14th', color: '#c084fc' },
     { text: 'Send HP vendor an email, asking them if they are available to come on site on Tuesday', color: '#4ade80' },
     { text: 'How do I get access to the network-security Slack channel?', color: '#22d3ee' },
-    { text: 'Add Martha as the AV Technician for the Paris Office. Her email is martha@milecore.com', color: '#facc15' },
+    { text: 'Add Martha as the AV Technician for the Paris Office. Her email is martha@truecore.cloud', color: '#facc15' },
     { text: 'Add 6 hours of work for Jim today, on the issue we have with the Cisco Access Points', color: '#fb923c' },
     { text: 'Does the town hall in the canteen today need audio/video support?', color: '#f472b6' },
 ];
 
-export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser, onDemoBannerClick }) {
+export function ChatPage({ personId = 1, currentUser, allUsers = [], onSwitchUser, onDemoBannerClick }) {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -167,7 +166,7 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
     const assistantProfilePic = profilePics[2];
     const sidebarDisplayName = currentUser?.display_name || '...';
     const sidebarJobTitle = currentUser?.job_title || '';
-    const isAdmin = currentUser?.role === 'admin';
+    const isAdmin = ['admin', 'owner'].includes(currentUser?.role);
 
     const loadSessions = () => {
         fetch(`/api/sessions?person_id=${personId}`).then(r => r.json()).then(d => setSessions(d.sessions || [])).catch(() => {});
@@ -401,7 +400,9 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                         </div>
                     </div>
                     <div className="sidebar-user-row">
-                        <button className="btn btn-sm" onClick={onSwitchUser}>{switchLabel}</button>
+                        <select className="btn btn-sm user-select" value={personId} onChange={e => onSwitchUser(Number(e.target.value))}>
+                            {allUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} ({u.user_role})</option>)}
+                        </select>
                         <button className="btn btn-sm" onClick={() => setSettingsOpen(true)} title="Settings">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="12" cy="12" r="3"/>
@@ -421,11 +422,8 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                     {messages.length === 0 && homeSiteChecked && (
                         <div className="empty-state">
                             <div className="empty-state-hero">
-                                <div className="empty-state-logo-wrap">
-                                    <img src={logo} alt="Milestone Technologies" className="empty-state-logo" />
-                                </div>
                                 <div className="empty-state-brand-row">
-                                    <div className="empty-state-brand">MileCore</div>
+                                    <div className="empty-state-brand">TrueCore.cloud</div>
                                     <span className="empty-state-divider" aria-hidden="true">|</span>
                                     <div className="empty-state-motto">It simply works.</div>
                                 </div>
@@ -474,6 +472,7 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                             <textarea
                                 className="chat-input"
                                 placeholder="Type a message..."
+                                aria-label="Message input"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
@@ -500,7 +499,7 @@ export function ChatPage({ personId = 1, currentUser, switchLabel, onSwitchUser,
                             {pendingFile && (
                                 <div className="file-chip">
                                     <span className="file-chip-name">{pendingFile.name}</span>
-                                    <button className="file-chip-dismiss" onClick={() => setPendingFile(null)}>&times;</button>
+                                    <button className="file-chip-dismiss" onClick={() => setPendingFile(null)} aria-label="Remove file">&times;</button>
                                 </div>
                             )}
                             <button

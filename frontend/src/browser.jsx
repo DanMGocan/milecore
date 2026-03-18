@@ -279,7 +279,7 @@ export function BrowserPage() {
                     {tables.map(t => (
                         <div
                             key={t}
-                            className={'table-item' + (selected === t ? ' active' : '')}
+                            className={`table-item${selected === t ? ' active' : ''}`}
                             onClick={() => selectTable(t)}
                         >
                             <TableIcon />
@@ -329,7 +329,7 @@ export function BrowserPage() {
                                     <thead>
                                         <tr>
                                             {columns.map(c => <th key={c}>{c}</th>)}
-                                            <th></th>
+                                            <th scope="col">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -344,6 +344,7 @@ export function BrowserPage() {
                                                     <button
                                                         className="delete-row-btn"
                                                         onClick={() => deleteRow(row.rowid || row.id)}
+                                                        aria-label={`Delete row ${row.rowid || row.id}`}
                                                     >
                                                         Del
                                                     </button>

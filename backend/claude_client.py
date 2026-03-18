@@ -62,12 +62,29 @@ def _swap_to_spare() -> bool:
         return True
     return False
 
-# In-memory store for generated files: {file_id: (filename, bytes)}
-_generated_files: dict[str, tuple[str, bytes]] = {}
+# In-memory store for generated files: {file_id: (filename, bytes, created_ts)}
+_generated_files: dict[str, tuple[str, bytes, float]] = {}
+_MAX_GENERATED_FILES = 100
+_FILE_TTL_SECONDS = 3600  # 1 hour
+
+
+def _cleanup_generated_files() -> None:
+    """Remove expired files and cap total count."""
+    now = time.time()
+    expired = [fid for fid, (_, _, ts) in _generated_files.items() if now - ts > _FILE_TTL_SECONDS]
+    for fid in expired:
+        del _generated_files[fid]
+    if len(_generated_files) > _MAX_GENERATED_FILES:
+        by_age = sorted(_generated_files, key=lambda k: _generated_files[k][2])
+        for fid in by_age[: len(_generated_files) - _MAX_GENERATED_FILES]:
+            del _generated_files[fid]
 
 
 def get_generated_file(file_id: str) -> tuple[str, bytes] | None:
-    return _generated_files.get(file_id)
+    entry = _generated_files.get(file_id)
+    if entry is None:
+        return None
+    return (entry[0], entry[1])
 
 
 # Schema DDL cache — cleared when tables are created/dropped
@@ -115,15 +132,16 @@ def _build_home_site_section() -> str:
             "No home site is configured in app_settings. This should not happen in normal startup because bootstrap seeding sets one.\n"
             "Do not ask the user to configure a home site. Continue normally and prefer explicit site mentions from the user when needed."
         )
+    site_label = site['client_name'] or site['name']
     return (
         "HOME SITE:\n"
-        f"This instance serves {site['client_name']} in {site['city']} (site_id: {site['id']}). "
+        f"This instance serves {site_label} in {site['city']} (site_id: {site['id']}). "
         "Default all operations to this site unless the user specifies otherwise."
     )
 
 
 def _build_user_role_section(user_role: str) -> str:
-    if user_role == "admin":
+    if user_role in ("admin", "owner"):
         return (
             "USER ROLE:\n"
             "The current user is an admin. They can manage approval rules and review pending approvals."
@@ -207,7 +225,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
 
         tool_name = block["name"]
 
-        if user_role != "admin" and tool_name in ADMIN_ONLY_TOOLS:
+        if user_role not in ("admin", "owner") and tool_name in ADMIN_ONLY_TOOLS:
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
@@ -484,7 +502,8 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                     wb.save(buf)
                     file_bytes = buf.getvalue()
                     file_id = str(uuid.uuid4())
-                    _generated_files[file_id] = (filename, file_bytes)
+                    _cleanup_generated_files()
+                    _generated_files[file_id] = (filename, file_bytes, time.time())
                     download_url = f"/api/downloads/{file_id}"
                     result = {
                         "success": True,
@@ -551,9 +570,10 @@ def chat_stream(
             return
 
         if response.stop_reason == "tool_use":
+            sql_log_before = len(sql_log)
             tool_results = _execute_tools(assistant_content, sql_log, user_role)
             # Notify frontend about each SQL/file operation
-            for entry in sql_log[len(sql_log) - len(tool_results):]:
+            for entry in sql_log[sql_log_before:]:
                 if entry.get("tool") == "generate_excel":
                     yield f"event: file\ndata: {json.dumps(entry)}\n\n"
                 else:

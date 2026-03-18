@@ -53,7 +53,7 @@ async def export_excel():
 
 @router.post("/import")
 async def import_excel(file: UploadFile = File(...)):
-    if not file.filename.endswith(".xlsx"):
+    if not file.filename or not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only .xlsx files are accepted")
     contents = await file.read()
     wb = load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
@@ -73,6 +73,9 @@ async def import_excel(file: UploadFile = File(...)):
                 summary["skipped_sheets"].append(sheet_name)
                 continue
             headers = rows[0]
+            if not all(isinstance(h, str) and re.match(r"^\w+$", h) for h in headers):
+                summary["errors"].append(f"{sheet_name}: invalid column names")
+                continue
             data_rows = rows[1:]
             # Clear existing data
             result = execute_query(f"DELETE FROM {sheet_name}")
@@ -102,7 +105,7 @@ async def import_excel(file: UploadFile = File(...)):
 
 @router.post("/import-merge")
 async def import_merge(file: UploadFile = File(...)):
-    if not file.filename.endswith((".xlsx", ".db")):
+    if not file.filename or not file.filename.endswith((".xlsx", ".db")):
         raise HTTPException(status_code=400, detail="Only .xlsx and .db files are accepted")
 
     contents = await file.read()
@@ -126,6 +129,9 @@ async def import_merge(file: UploadFile = File(...)):
                         summary["skipped_sheets"].append(sheet_name)
                         continue
                     headers = rows[0]
+                    if not all(isinstance(h, str) and re.match(r"^\w+$", h) for h in headers):
+                        summary["errors"].append(f"{sheet_name}: invalid column names")
+                        continue
                     data_rows = rows[1:]
                     placeholders = ", ".join(["?"] * len(headers))
                     col_names = ", ".join(headers)
@@ -167,6 +173,9 @@ async def import_merge(file: UploadFile = File(...)):
                     col_names = [
                         desc[0] for desc in src_cursor.description
                     ]
+                    if not all(isinstance(c, str) and re.match(r"^\w+$", c) for c in col_names):
+                        summary["errors"].append(f"{table}: invalid column names")
+                        continue
                     placeholders = ", ".join(["?"] * len(col_names))
                     col_str = ", ".join(col_names)
                     inserted = 0
@@ -300,6 +309,10 @@ async def insert_row(table_name: str, req: InsertRowRequest):
     name = _validate_name(table_name)
     if not req.data:
         raise HTTPException(status_code=400, detail="No data provided")
+
+    for key in req.data.keys():
+        if not re.match(r"^\w+$", key):
+            raise HTTPException(status_code=400, detail=f"Invalid column name: {key}")
 
     columns = ", ".join(req.data.keys())
     placeholders = ", ".join(["?"] * len(req.data))

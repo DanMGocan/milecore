@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from backend.config import DAILY_REPORT_HOUR, DAILY_REPORT_MINUTE
+from backend.config import CORS_ORIGINS, DAILY_REPORT_HOUR, DAILY_REPORT_MINUTE
 from backend.routes.chat import router as chat_router
 from backend.routes.database_browser import router as browser_router
 from backend.routes.upload import router as upload_router
@@ -47,7 +47,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

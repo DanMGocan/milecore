@@ -1,9 +1,12 @@
 import os
+import re
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from backend.claude_client import clear_prompt_cache, clear_schema_cache
-from backend.config import SCHEMA_PATH
+from backend.config import APP_URL, SCHEMA_PATH
+from backend.email_sender import send_email
 from backend.database import _lock, get_connection, reset_db
 from initial_seed import seed_initial_data
 
@@ -127,6 +130,8 @@ async def seed_demo():
                 headers = [cell.value for cell in ws[1]]
                 if not headers:
                     continue
+                if not all(isinstance(h, str) and re.match(r"^\w+$", h) for h in headers):
+                    continue
 
                 cols = ", ".join(headers)
                 placeholders = ", ".join(["?"] * len(headers))
@@ -159,3 +164,133 @@ async def reset_database():
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# --- User Management ---
+
+@router.get("/users")
+async def list_users():
+    users = _query(
+        "SELECT id, first_name, last_name, email, username, user_role, role_title, status "
+        "FROM people WHERE is_user = 1 ORDER BY id"
+    )
+    return {"users": users}
+
+
+class AddUserRequest(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    role: str = "user"
+    requesting_person_id: int
+
+
+@router.post("/users")
+async def add_user(req: AddUserRequest):
+    if req.role not in ("user", "admin"):
+        return {"error": "Role must be 'user' or 'admin'"}
+
+    requester = _query(
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [req.requesting_person_id]
+    )
+    if not requester:
+        return {"error": "Requesting user not found"}
+    requester_role = requester[0]["user_role"]
+
+    if req.role == "admin" and requester_role != "owner":
+        return {"error": "Only the owner can add admins"}
+    if requester_role not in ("owner", "admin"):
+        return {"error": "Only owner or admin can add users"}
+
+    base_username = req.first_name.lower().strip()
+    username = base_username
+    suffix = 1
+    while _query("SELECT 1 FROM people WHERE username = ?", [username]):
+        suffix += 1
+        username = f"{base_username}{suffix}"
+
+    conn = get_connection()
+    with _lock:
+        conn.execute(
+            "INSERT INTO people (first_name, last_name, email, is_user, username, user_role, status) "
+            "VALUES (?, ?, ?, 1, ?, ?, 'active')",
+            [req.first_name.strip(), req.last_name.strip(), req.email.strip(), username, req.role],
+        )
+        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit()
+
+    email_result = send_email(
+        to_email=req.email.strip(),
+        subject=f"You've been added to TrueCore.cloud as {req.role}",
+        body=(
+            f"Hi {req.first_name.strip()},\n\n"
+            f"You've been added to TrueCore.cloud as a {req.role}.\n"
+            f"Your username is: {username}\n\n"
+            f"Access TrueCore.cloud here: {APP_URL}\n\n"
+            f"— TrueCore.cloud"
+        ),
+        to_name=f"{req.first_name.strip()} {req.last_name.strip()}",
+    )
+
+    return {"ok": True, "person_id": new_id, "username": username, "email_sent": email_result}
+
+
+@router.delete("/users/{person_id}")
+async def remove_user(person_id: int, requesting_person_id: int = Query(...)):
+    target = _query("SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id])
+    if not target:
+        return {"error": "User not found"}
+    if target[0]["user_role"] == "owner":
+        return {"error": "Cannot remove the owner"}
+
+    requester = _query(
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [requesting_person_id]
+    )
+    if not requester:
+        return {"error": "Requesting user not found"}
+    requester_role = requester[0]["user_role"]
+    target_role = target[0]["user_role"]
+
+    if requester_role == "admin" and target_role == "admin":
+        return {"error": "Admins cannot remove other admins"}
+    if requester_role not in ("owner", "admin"):
+        return {"error": "Insufficient permissions"}
+
+    conn = get_connection()
+    with _lock:
+        conn.execute(
+            "UPDATE people SET is_user = 0, status = 'inactive' WHERE id = ?", [person_id]
+        )
+        conn.commit()
+
+    return {"ok": True}
+
+
+class ChangeRoleRequest(BaseModel):
+    new_role: str
+    requesting_person_id: int
+
+
+@router.patch("/users/{person_id}/role")
+async def change_user_role(person_id: int, req: ChangeRoleRequest):
+    if req.new_role not in ("user", "admin"):
+        return {"error": "Role must be 'user' or 'admin'"}
+
+    requester = _query(
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [req.requesting_person_id]
+    )
+    if not requester or requester[0]["user_role"] != "owner":
+        return {"error": "Only the owner can change roles"}
+
+    target = _query("SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id])
+    if not target:
+        return {"error": "User not found"}
+    if target[0]["user_role"] == "owner":
+        return {"error": "Cannot change the owner's role"}
+
+    conn = get_connection()
+    with _lock:
+        conn.execute("UPDATE people SET user_role = ? WHERE id = ?", [req.new_role, person_id])
+        conn.commit()
+
+    return {"ok": True}

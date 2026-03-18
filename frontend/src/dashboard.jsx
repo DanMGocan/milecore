@@ -64,7 +64,7 @@ function EmptyChart() {
     );
 }
 
-export function DashboardPage({ currentUser }) {
+export function DashboardPage({ currentUser, onRefreshUsers }) {
     const [overview, setOverview] = useState(null);
     const [assets, setAssets] = useState([]);
     const [issues, setIssues] = useState({ by_status: [], by_severity: [] });
@@ -73,6 +73,51 @@ export function DashboardPage({ currentUser }) {
     const [reportStatus, setReportStatus] = useState(null);
     const [importing, setImporting] = useState(false);
     const importRef = useRef(null);
+    const [users, setUsers] = useState([]);
+    const [addingUser, setAddingUser] = useState(false);
+    const [newUser, setNewUser] = useState({ first_name: '', last_name: '', email: '', role: 'user' });
+
+    const isPrivileged = ['admin', 'owner'].includes(currentUser?.role);
+
+    const loadUsers = () => {
+        fetch('/api/dashboard/users').then(r => r.json()).then(d => setUsers(d.users || [])).catch(console.error);
+    };
+
+    const handleAddUser = async () => {
+        const res = await fetch('/api/dashboard/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...newUser, requesting_person_id: currentUser?.person_id }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            setAddingUser(false);
+            setNewUser({ first_name: '', last_name: '', email: '', role: 'user' });
+            loadUsers();
+            onRefreshUsers?.();
+        } else {
+            alert(data.error || 'Failed to add user');
+        }
+    };
+
+    const handleRemoveUser = async (personId) => {
+        if (!window.confirm('Remove this user?')) return;
+        const res = await fetch(`/api/dashboard/users/${personId}?requesting_person_id=${currentUser?.person_id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) { loadUsers(); onRefreshUsers?.(); }
+        else alert(data.error || 'Failed to remove user');
+    };
+
+    const handleRoleChange = async (personId, newRole) => {
+        const res = await fetch(`/api/dashboard/users/${personId}/role`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_role: newRole, requesting_person_id: currentUser?.person_id }),
+        });
+        const data = await res.json();
+        if (data.ok) { loadUsers(); onRefreshUsers?.(); }
+        else alert(data.error || 'Failed to change role');
+    };
 
     const sendDailyReport = async () => {
         setReportStatus('sending');
@@ -105,7 +150,7 @@ export function DashboardPage({ currentUser }) {
         }).catch(console.error);
     }
 
-    useEffect(() => { loadDashboard(); }, []);
+    useEffect(() => { loadDashboard(); loadUsers(); }, []);
 
     const handleImportMerge = async (e) => {
         const file = e.target.files[0];
@@ -231,6 +276,57 @@ export function DashboardPage({ currentUser }) {
                 </p>
             )}
 
+            {isPrivileged && (
+                <div className="dashboard-management">
+                    <div className="dashboard-management-title">User Management</div>
+                    <div className="user-list">
+                        {users.map(u => (
+                            <div key={u.id} className="user-row">
+                                <div className="user-info">
+                                    <span className="user-name">{u.first_name} {u.last_name}</span>
+                                    <span className="user-email">{u.email || 'No email'}</span>
+                                    <span className={`user-role-badge role-${u.user_role}`}>{u.user_role}</span>
+                                </div>
+                                <div className="user-actions">
+                                    {currentUser?.role === 'owner' && u.user_role !== 'owner' && (
+                                        <select className="btn btn-sm" value={u.user_role} onChange={e => handleRoleChange(u.id, e.target.value)}>
+                                            <option value="user">user</option>
+                                            <option value="admin">admin</option>
+                                        </select>
+                                    )}
+                                    {u.user_role !== 'owner' && (
+                                        (currentUser?.role === 'owner' || (currentUser?.role === 'admin' && u.user_role === 'user')) && (
+                                            <button className="btn btn-sm btn-danger" onClick={() => handleRemoveUser(u.id)}>Remove</button>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {addingUser ? (
+                        <div className="add-user-form">
+                            <input className="form-input" placeholder="First name" value={newUser.first_name} onChange={e => setNewUser({ ...newUser, first_name: e.target.value })} />
+                            <input className="form-input" placeholder="Last name" value={newUser.last_name} onChange={e => setNewUser({ ...newUser, last_name: e.target.value })} />
+                            <input className="form-input" placeholder="Email" type="email" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} />
+                            {currentUser?.role === 'owner' && (
+                                <select className="form-input" value={newUser.role} onChange={e => setNewUser({ ...newUser, role: e.target.value })}>
+                                    <option value="user">user</option>
+                                    <option value="admin">admin</option>
+                                </select>
+                            )}
+                            <div className="add-user-actions">
+                                <button className="btn btn-sm btn-primary" onClick={handleAddUser}>Add &amp; Send Invite</button>
+                                <button className="btn btn-sm" onClick={() => setAddingUser(false)}>Cancel</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="dashboard-management-row" style={{ marginTop: 12 }}>
+                            <button className="btn btn-sm btn-primary" onClick={() => setAddingUser(true)}>+ Add User</button>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div className="dashboard-management">
                 <div className="dashboard-management-title">Dummy Files for Demo</div>
                 <div className="dashboard-management-hint">
@@ -275,7 +371,7 @@ export function DashboardPage({ currentUser }) {
             <div className="dashboard-management">
                 <div className="dashboard-management-title">Demo-only</div>
                 <div className="dashboard-management-row">
-                    {currentUser?.role === 'admin' && (
+                    {isPrivileged && (
                         <button
                             className="btn btn-sm"
                             onClick={sendDailyReport}

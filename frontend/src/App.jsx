@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
 import { Modal } from './components';
 
+const LandingPage = lazy(() => import('./landing').then(m => ({ default: m.LandingPage })));
 const ChatPage = lazy(() => import('./chat').then(m => ({ default: m.ChatPage })));
 const BrowserPage = lazy(() => import('./browser').then(m => ({ default: m.BrowserPage })));
 const DashboardPage = lazy(() => import('./dashboard').then(m => ({ default: m.DashboardPage })));
@@ -22,7 +23,8 @@ export default function App() {
         if (path === '/documentation' || path === '/docs') return 'documentation';
         if (path === '/database' || path === '/browser') return 'browser';
         if (path === '/dashboard') return 'dashboard';
-        return 'chat';
+        if (path === '/chat') return 'chat';
+        return 'landing';
     });
     const [menuOpen, setMenuOpen] = useState(false);
     const [logoutModal, setLogoutModal] = useState(false);
@@ -36,9 +38,19 @@ export default function App() {
         return stored ? Number(stored) : 1;
     });
     const [currentUser, setCurrentUser] = useState(null);
+    const [allUsers, setAllUsers] = useState([]);
+
+    const fetchAllUsers = () => {
+        fetch('/api/users/all')
+            .then(r => r.json())
+            .then(d => setAllUsers(d.users || []))
+            .catch(() => {});
+    };
+
+    useEffect(() => { fetchAllUsers(); }, []);
 
     useEffect(() => {
-        const pathMap = { chat: '/', browser: '/database', dashboard: '/dashboard', documentation: '/documentation' };
+        const pathMap = { landing: '/', chat: '/chat', browser: '/database', dashboard: '/dashboard', documentation: '/documentation' };
         const target = pathMap[page] || '/';
         if (window.location.pathname !== target) {
             window.history.pushState(null, '', target);
@@ -51,7 +63,8 @@ export default function App() {
             if (path === '/documentation' || path === '/docs') setPage('documentation');
             else if (path === '/database' || path === '/browser') setPage('browser');
             else if (path === '/dashboard') setPage('dashboard');
-            else setPage('chat');
+            else if (path === '/chat') setPage('chat');
+            else setPage('landing');
         };
         window.addEventListener('popstate', handlePop);
         return () => window.removeEventListener('popstate', handlePop);
@@ -76,13 +89,10 @@ export default function App() {
         return () => clearInterval(interval);
     }, []);
 
-    const switchUser = () => {
-        const newId = personId === 1 ? 2 : 1;
+    const handleUserSwitch = (newId) => {
         setPersonId(newId);
         localStorage.setItem('personId', String(newId));
     };
-
-    const switchLabel = personId === 1 ? 'Switch to Bob' : 'Switch to Dan';
 
     const handleSeedDemo = async () => {
         setSeedLoading(true);
@@ -112,25 +122,28 @@ export default function App() {
 
     return (
         <div className="app">
-            <nav className="navbar">
-                <button className="nav-hamburger" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">
-                    <span /><span /><span />
-                </button>
-                <div className={`nav-links${menuOpen ? ' open' : ''}`}>
-                    <button className={`nav-link${page === 'chat' ? ' active' : ''}`} onClick={() => { setPage('chat'); setMenuOpen(false); }}>Chat{currentUser?.role === 'admin' && pendingCount > 0 && <span className="approval-badge">{pendingCount} pending approval{pendingCount === 1 ? '' : 's'}</span>}</button>
-                    <button className={`nav-link${page === 'browser' ? ' active' : ''}`} onClick={() => { setPage('browser'); setMenuOpen(false); }}>Database</button>
-                    <button className={`nav-link${page === 'dashboard' ? ' active' : ''}`} onClick={() => { setPage('dashboard'); setMenuOpen(false); }}>Dashboard</button>
-                    <button className={`nav-link nav-link-docs${page === 'documentation' ? ' active' : ''}`} onClick={() => { setPage('documentation'); setMenuOpen(false); }}>Docs</button>
-                </div>
-                <div className="nav-actions">
-                    <button className={`nav-link${page === 'documentation' ? ' active' : ''}`} onClick={() => setPage('documentation')}>Docs</button>
-                </div>
-            </nav>
-            <div className="app-content">
+            {page !== 'landing' && (
+                <nav className="navbar">
+                    <button className="nav-hamburger" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">
+                        <span /><span /><span />
+                    </button>
+                    <div className={`nav-links${menuOpen ? ' open' : ''}`}>
+                        <button className={`nav-link${page === 'chat' ? ' active' : ''}`} onClick={() => { setPage('chat'); setMenuOpen(false); }}>Chat{['admin','owner'].includes(currentUser?.role) && pendingCount > 0 && <span className="approval-badge">{pendingCount} pending approval{pendingCount === 1 ? '' : 's'}</span>}</button>
+                        <button className={`nav-link${page === 'browser' ? ' active' : ''}`} onClick={() => { setPage('browser'); setMenuOpen(false); }}>Database</button>
+                        <button className={`nav-link${page === 'dashboard' ? ' active' : ''}`} onClick={() => { setPage('dashboard'); setMenuOpen(false); }}>Dashboard</button>
+                        <button className={`nav-link nav-link-docs${page === 'documentation' ? ' active' : ''}`} onClick={() => { setPage('documentation'); setMenuOpen(false); }}>Docs</button>
+                    </div>
+                    <div className="nav-actions">
+                        <button className={`nav-link${page === 'documentation' ? ' active' : ''}`} onClick={() => setPage('documentation')}>Docs</button>
+                    </div>
+                </nav>
+            )}
+            <div className={page === 'landing' ? 'app-content-full' : 'app-content'}>
                 <Suspense fallback={<SkeletonFallback />}>
-                    {page === 'chat' && <div className="page-enter"><ChatPage personId={personId} currentUser={currentUser} switchLabel={switchLabel} onSwitchUser={switchUser} onDemoBannerClick={() => setDemoModal(true)} /></div>}
+                    {page === 'landing' && <LandingPage onNavigate={setPage} />}
+                    {page === 'chat' && <div className="page-enter"><ChatPage personId={personId} currentUser={currentUser} allUsers={allUsers} onSwitchUser={handleUserSwitch} onDemoBannerClick={() => setDemoModal(true)} /></div>}
                     {page === 'browser' && <div className="page-enter"><BrowserPage /></div>}
-                    {page === 'dashboard' && <div className="page-enter"><DashboardPage currentUser={currentUser} /></div>}
+                    {page === 'dashboard' && <div className="page-enter"><DashboardPage currentUser={currentUser} onRefreshUsers={fetchAllUsers} /></div>}
                     {page === 'documentation' && <div className="page-enter"><DocumentationPage /></div>}
                 </Suspense>
             </div>
@@ -180,8 +193,8 @@ export default function App() {
                     </>
                 ) : (
                     <>
-                        <p>MileCore is an AI-powered database assistant for IT site operations. Talk to it in plain English to manage assets, people, support requests, events, inventory, and more — it translates your words into database actions automatically.</p>
-                        <p>This demo does <strong>not</strong> come with data preloaded, except for two users: <strong>Dan</strong> (admin) and <strong>Bob</strong> (regular user).</p>
+                        <p>TrueCore.cloud is an AI-powered database assistant for IT site operations. Talk to it in plain English to manage assets, people, support requests, events, inventory, and more — it translates your words into database actions automatically.</p>
+                        <p>This demo does <strong>not</strong> come with data preloaded, except for two users: <strong>Dan</strong> (owner) and <strong>Bob</strong> (regular user).</p>
                         <p>However, if you'd like to seed the database with dummy AI-generated entries, <a href="#" onClick={(e) => { e.preventDefault(); handleSeedDemo(); }} className="seed-link">click here</a>.</p>
                         <p>You can always reset the database by going to the <strong>Dashboard</strong> page and clicking the red <strong>"Reset Database"</strong> button to wipe all data and start from scratch.</p>
                         <div className="modal-actions">

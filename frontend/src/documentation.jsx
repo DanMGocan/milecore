@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 
 const TOC = [
     { id: 'overview', label: 'Overview' },
+    { id: 'features', label: 'Features' },
     { id: 'chat', label: 'Chat Interface' },
     { id: 'capabilities', label: 'What You Can Do' },
     { id: 'csv-import', label: 'CSV Import' },
@@ -80,6 +81,7 @@ export function DocumentationPage() {
             </nav>
             <div className="doc-content" ref={contentRef}>
                 <OverviewSection />
+                <FeaturesSection />
                 <ChatSection />
                 <CapabilitiesSection />
                 <CsvImportSection />
@@ -106,7 +108,7 @@ function OverviewSection() {
         <section id="overview" className="doc-section">
             <h2>Overview</h2>
             <p>
-                MileCore is an AI-powered database assistant built for technical site operations. It helps IT support teams, tech bar technicians, AV support, and workplace technology teams store and retrieve operational data through natural language conversation.
+                TrueCore.cloud is an AI-powered database assistant built for technical site operations. It helps IT support teams, tech bar technicians, AV support, and workplace technology teams store and retrieve operational data through natural language conversation.
             </p>
             <h3>Tech Stack</h3>
             <ul>
@@ -117,13 +119,13 @@ function OverviewSection() {
             </ul>
             <h3>Getting Started</h3>
             <p>
-                MileCore boots with a seeded default <strong>home site</strong>: <strong>Dublin HQ</strong>. All operations default to that site unless you explicitly specify another one.
+                TrueCore.cloud boots with a seeded default <strong>home site</strong>: <strong>Dublin HQ</strong>. All operations default to that site unless you explicitly specify another one.
             </p>
             <div className="doc-callout">
                 <strong>Bootstrap seed:</strong> The initial company, home site, and demo users are restored automatically on first launch and after a database reset.
             </div>
             <h3>Core Workflow</h3>
-            <p>MileCore is organized around the lifecycle of site operations:</p>
+            <p>TrueCore.cloud is organized around the lifecycle of site operations:</p>
             <ol className="doc-flow">
                 <li className="doc-flow-step">Person reports a problem</li>
                 <li className="doc-flow-step">Support request created</li>
@@ -137,12 +139,139 @@ function OverviewSection() {
     );
 }
 
+function FeaturesSection() {
+    return (
+        <section id="features" className="doc-section">
+            <h2>Features</h2>
+            <p>A complete list of everything TrueCore.cloud can do, organized by area.</p>
+
+            <h3>AI Chat</h3>
+            <ul>
+                <li>Natural language conversation — ask questions and give instructions in plain English</li>
+                <li>Real-time streaming responses via Server-Sent Events</li>
+                <li>Multi-step operations — the AI coordinates across multiple tables in one request</li>
+                <li>Context-aware — understands the current user, home site, and relative dates</li>
+                <li>Markdown-rendered responses with formatted tables, lists, and code blocks</li>
+                <li>Collapsible SQL operation blocks showing what was executed and the result</li>
+                <li>Conversation history with session sidebar — resume any previous chat</li>
+                <li>Suggested example prompts on empty chat to help new users get started</li>
+            </ul>
+
+            <h3>Data Management</h3>
+            <ul>
+                <li>People and teams — add, update, and query staff, clients, vendors, and supervisors</li>
+                <li>Assets and equipment — register, track lifecycle status, link parent/child relationships</li>
+                <li>Support requests — create, prioritize, update status, and resolve</li>
+                <li>Technical issues — log issues, record recurring occurrences, track severity</li>
+                <li>Events and scheduling — meetings, vendor visits, outages, maintenance windows</li>
+                <li>Event participants and equipment reservations</li>
+                <li>Inventory management — stock items, restock, check out, transfer between sites</li>
+                <li>Work logs — time tracking tied to requests, issues, or assets</li>
+                <li>Notes — freeform notes attached to any entity, including handover and follow-up notes</li>
+                <li>PTO and leave tracking for staff</li>
+                <li>Change management — log infrastructure changes with risk level and scheduling</li>
+                <li>Vendor contracts — track vendors, SLAs, and contract expiry dates</li>
+                <li>Sites and rooms — manage locations and physical spaces</li>
+                <li>Tagging — flexible tagging system across all entity types</li>
+                <li>Audit log — automatic tracking of all data changes</li>
+            </ul>
+
+            <h3>Knowledge Management</h3>
+            <ul>
+                <li>Knowledge articles — troubleshooting guides, SOPs, reference documents</li>
+                <li>Workflows — document operational processes step by step</li>
+                <li>Miscellaneous knowledge — store operational info like office hours, policies, and procedures</li>
+            </ul>
+
+            <h3>CSV Bulk Import</h3>
+            <ul>
+                <li>Upload CSV files through chat via the paperclip button</li>
+                <li>AI-powered column mapping — the AI analyzes headers and proposes a mapping to the target table</li>
+                <li>Confirmation step before executing — review and adjust mappings</li>
+                <li>Dry-run validation with SAVEPOINT before committing</li>
+                <li>Duplicate handling with INSERT OR IGNORE</li>
+                <li>Approval integration — imports can be routed for admin review</li>
+            </ul>
+
+            <h3>Email Integration</h3>
+            <ul>
+                <li>Send emails through chat — describe who and what, the AI drafts and sends</li>
+                <li>Recipient lookup — the AI verifies email addresses from the database before sending</li>
+                <li>Automated daily reports — scheduled email summaries sent to supervisors</li>
+                <li>Manual daily report trigger from the dashboard (admin only)</li>
+            </ul>
+
+            <h3>Excel File Generation</h3>
+            <ul>
+                <li>Generate downloadable Excel files from any query through chat</li>
+                <li>Export the entire database to a single .xlsx file with one sheet per table</li>
+                <li>Download the raw SQLite .db file</li>
+            </ul>
+
+            <h3>Approval System</h3>
+            <ul>
+                <li>Admin-defined approval rules that intercept write operations (INSERT, UPDATE, DELETE)</li>
+                <li>Queued pending approvals with full SQL and explanation visible to reviewers</li>
+                <li>Approve or reject through chat with optional notes</li>
+                <li>Pending approval badge count on the Chat nav link for admins</li>
+                <li>CSV imports that match rules are also queued for review</li>
+            </ul>
+
+            <h3>Database Browser</h3>
+            <ul>
+                <li>Visual table browser with row counts per table</li>
+                <li>Schema viewer — column names, types, primary key and NOT NULL indicators</li>
+                <li>Paginated data grid (50 rows per page)</li>
+                <li>Insert rows via form</li>
+                <li>Delete individual rows</li>
+                <li>Create new tables with custom column definitions</li>
+                <li>Add columns to existing tables</li>
+                <li>Drop tables</li>
+            </ul>
+
+            <h3>Dashboard</h3>
+            <ul>
+                <li>Stat cards — active assets, open requests, open issues, events this week, important items</li>
+                <li>Charts — assets over time, issues by severity, requests by status, staff per site, vendor visits</li>
+                <li>Database management — export to Excel, import &amp; merge from .xlsx or .db, download raw database</li>
+                <li>Admin actions — send daily report, reset database</li>
+                <li>Downloadable demo CSV files for testing</li>
+            </ul>
+
+            <h3>User System</h3>
+            <ul>
+                <li>Two roles: admin and standard user</li>
+                <li>User switching — toggle between users to test different permission levels</li>
+                <li>Per-user conversation history</li>
+                <li>Admin-only tools — approval management, daily reports, database reset</li>
+                <li>User profile display with name, title, role, and admin badge</li>
+            </ul>
+
+            <h3>Important Flags</h3>
+            <ul>
+                <li>Flag any record as important across all major tables</li>
+                <li>Dashboard stat card counts all flagged items</li>
+                <li>Daily report highlights important items</li>
+            </ul>
+
+            <h3>Mobile &amp; Responsive</h3>
+            <ul>
+                <li>Fully responsive layout across all pages</li>
+                <li>Hamburger menu navigation on mobile</li>
+                <li>Off-canvas sidebars for chat, database browser, and documentation</li>
+                <li>Touch-friendly targets (44px minimum)</li>
+                <li>Landing page carousel with touch swipe support</li>
+            </ul>
+        </section>
+    );
+}
+
 function ChatSection() {
     return (
         <section id="chat" className="doc-section">
             <h2>Chat Interface</h2>
             <p>
-                The chat page is the primary way to interact with MileCore. Type natural language messages and the AI will translate your intent into database operations.
+                The chat page is the primary way to interact with TrueCore.cloud. Type natural language messages and the AI will translate your intent into database operations.
             </p>
             <h3>Sending Messages</h3>
             <p>
@@ -173,7 +302,7 @@ function CapabilitiesSection() {
         <section id="capabilities" className="doc-section">
             <h2>What You Can Do</h2>
             <p>
-                MileCore understands natural language requests across many operational domains. Here's what you can ask, organized by category.
+                TrueCore.cloud understands natural language requests across many operational domains. Here's what you can ask, organized by category.
             </p>
 
             <h3>People & Teams</h3>
@@ -276,7 +405,7 @@ function CsvImportSection() {
         <section id="csv-import" className="doc-section">
             <h2>CSV Import</h2>
             <p>
-                MileCore supports bulk data import via CSV files. The AI analyzes your file, maps columns to the target table, and imports the data.
+                TrueCore.cloud supports bulk data import via CSV files. The AI analyzes your file, maps columns to the target table, and imports the data.
             </p>
             <h3>Import Flow</h3>
             <ol className="doc-flow">
@@ -309,7 +438,7 @@ function ApprovalsSection() {
 
             <h3>Creating Rules</h3>
             <p>
-                Only admin users can manage approval rules. Ask MileCore to create a rule by describing what should require approval:
+                Only admin users can manage approval rules. Ask TrueCore.cloud to create a rule by describing what should require approval:
             </p>
             <div className="doc-code-block">
                 "Add an approval rule: any changes to the assets table need approval"<br />
@@ -351,7 +480,7 @@ function DatabaseBrowserSection() {
         <section id="database-browser" className="doc-section">
             <h2>Database Browser</h2>
             <p>
-                The Database page provides a visual interface for browsing, editing, and managing all tables in the MileCore database.
+                The Database page provides a visual interface for browsing, editing, and managing all tables in the TrueCore.cloud database.
             </p>
 
             <h3>Table List</h3>
@@ -449,7 +578,7 @@ function EmailSection() {
         <section id="email" className="doc-section">
             <h2>Email</h2>
             <p>
-                MileCore can send emails on your behalf through the <span className="doc-code">send_email</span> tool. Emails are sent via Brevo (formerly Sendinblue) SMTP relay.
+                TrueCore.cloud can send emails on your behalf through the <span className="doc-code">send_email</span> tool. Emails are sent via Brevo (formerly Sendinblue) SMTP relay.
             </p>
 
             <h3>How It Works</h3>
@@ -479,7 +608,7 @@ function EmailSection() {
             </table>
 
             <h3>API Key Configuration</h3>
-            <p>MileCore requires an Anthropic API key and optionally supports a spare key for automatic failover:</p>
+            <p>TrueCore.cloud requires an Anthropic API key and optionally supports a spare key for automatic failover:</p>
             <table className="doc-table">
                 <thead><tr><th>Variable</th><th>Description</th></tr></thead>
                 <tbody>
@@ -488,7 +617,7 @@ function EmailSection() {
                 </tbody>
             </table>
             <div className="doc-callout doc-callout--tip">
-                <strong>Automatic failover:</strong> If a spare key is configured, MileCore will seamlessly switch to it when the primary key is rate-limited or fails authentication. This happens transparently with no interruption to the user's conversation.
+                <strong>Automatic failover:</strong> If a spare key is configured, TrueCore.cloud will seamlessly switch to it when the primary key is rate-limited or fails authentication. This happens transparently with no interruption to the user's conversation.
             </div>
         </section>
     );
@@ -499,7 +628,7 @@ function UserRolesSection() {
         <section id="user-roles" className="doc-section">
             <h2>User Roles</h2>
             <p>
-                MileCore has two user roles that control access to administrative features.
+                TrueCore.cloud has two user roles that control access to administrative features.
             </p>
 
             <h3>Admin</h3>
@@ -537,7 +666,7 @@ function DailyReportsSection() {
         <section id="daily-reports" className="doc-section">
             <h2>Daily Reports</h2>
             <p>
-                MileCore automatically generates and sends daily site reports via email to designated supervisors.
+                TrueCore.cloud automatically generates and sends daily site reports via email to designated supervisors.
             </p>
 
             <h3>Automatic Scheduling</h3>
@@ -611,7 +740,7 @@ function KnowledgeSection() {
         <section id="knowledge" className="doc-section">
             <h2>Knowledge Management</h2>
             <p>
-                MileCore provides three tables for capturing and organizing operational knowledge.
+                TrueCore.cloud provides three tables for capturing and organizing operational knowledge.
             </p>
 
             <h3>Knowledge Articles</h3>
@@ -737,7 +866,7 @@ function SchemaSection() {
         <section id="schema" className="doc-section">
             <h2>Database Schema</h2>
             <p>
-                MileCore uses a SQLite database with 30+ tables organized by domain. All write operations are automatically logged to the <span className="doc-code">audit_log</span> table. Below is a reference of every table grouped by function.
+                TrueCore.cloud uses a SQLite database with 30+ tables organized by domain. All write operations are automatically logged to the <span className="doc-code">audit_log</span> table. Below is a reference of every table grouped by function.
             </p>
             {groups.map(g => (
                 <div key={g.title}>
@@ -765,8 +894,8 @@ function ScopeSection() {
         <section id="scope" className="doc-section">
             <h2>Scope & Limitations</h2>
 
-            <h3>What MileCore Covers</h3>
-            <p>MileCore is purpose-built for <strong>IT and workplace operations</strong> at managed client sites. It handles:</p>
+            <h3>What TrueCore.cloud Covers</h3>
+            <p>TrueCore.cloud is purpose-built for <strong>IT and workplace operations</strong> at managed client sites. It handles:</p>
             <ul>
                 <li>IT support: issues, requests, troubleshooting, asset management</li>
                 <li>Site operations: rooms, events, maintenance, outages</li>
@@ -779,7 +908,7 @@ function ScopeSection() {
             </ul>
 
             <h3>What's Out of Scope</h3>
-            <p>MileCore will politely decline requests that fall outside its operational domain:</p>
+            <p>TrueCore.cloud will politely decline requests that fall outside its operational domain:</p>
             <ul>
                 <li>General knowledge questions ("What's the capital of France?")</li>
                 <li>Personal advice or opinions</li>
@@ -790,11 +919,11 @@ function ScopeSection() {
 
             <h3>How the AI Responds to Off-Topic Queries</h3>
             <p>
-                If you ask something outside MileCore's scope, the AI will briefly explain that it's designed for site operations and suggest how it can help within that domain. It won't attempt to answer off-topic questions.
+                If you ask something outside TrueCore.cloud's scope, the AI will briefly explain that it's designed for site operations and suggest how it can help within that domain. It won't attempt to answer off-topic questions.
             </p>
 
             <div className="doc-callout">
-                <strong>Single-site focus:</strong> Each MileCore instance is configured for one client site. While data for multiple sites can exist in the database, the AI defaults all operations to the configured home site.
+                <strong>Single-site focus:</strong> Each TrueCore.cloud instance is configured for one client site. While data for multiple sites can exist in the database, the AI defaults all operations to the configured home site.
             </div>
         </section>
     );
@@ -805,7 +934,7 @@ function QATestingSection() {
         <section id="qa-testing" className="doc-section">
             <h2>QA & Testing</h2>
             <p>
-                Manual QA checklist for verifying all MileCore features. Each subsection covers a functional area with specific test cases, steps to reproduce, and expected results.
+                Manual QA checklist for verifying all TrueCore.cloud features. Each subsection covers a functional area with specific test cases, steps to reproduce, and expected results.
             </p>
 
             <h3>Prerequisites</h3>
@@ -1210,10 +1339,10 @@ function CostEstimateSection() {
                 fontSize: '0.95em',
                 color: '#000000'
             }}>
-                <strong style={{ color: '#8b0000' }}>Model Recommendation:</strong> MileCore has been tested with both Sonnet and Opus models. Although Sonnet is 5 times cheaper than Opus, the performance has been very similar, so the recommendation is to run MileCore with the Sonnet 4.6 model for decreased costs and the same performance. No testing has been done with OpenAI LLMs.
+                <strong style={{ color: '#8b0000' }}>Model Recommendation:</strong> TrueCore.cloud has been tested with both Sonnet and Opus models. Although Sonnet is 5 times cheaper than Opus, the performance has been very similar, so the recommendation is to run TrueCore.cloud with the Sonnet 4.6 model for decreased costs and the same performance. No testing has been done with OpenAI LLMs.
             </div>
             <p>
-                MileCore runs on a single AWS EC2 instance with a SQLite database and uses the Claude API for its AI assistant. The Claude API is the dominant cost driver, accounting for 85–97% of total monthly spend depending on usage volume.
+                TrueCore.cloud runs on a single AWS EC2 instance with a SQLite database and uses the Claude API for its AI assistant. The Claude API is the dominant cost driver, accounting for 85–97% of total monthly spend depending on usage volume.
             </p>
 
             <h3>Claude API Cost Analysis</h3>
@@ -1292,7 +1421,7 @@ function CostEstimateSection() {
             </table>
 
             <h3>AWS EC2 Costs</h3>
-            <p>MileCore runs on a single EC2 instance. SQLite eliminates the need for a separate database server.</p>
+            <p>TrueCore.cloud runs on a single EC2 instance. SQLite eliminates the need for a separate database server.</p>
 
             <h4>Instance Sizing</h4>
             <table className="doc-table">

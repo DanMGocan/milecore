@@ -143,6 +143,9 @@ def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str]
         return {"error": "No rows to import after mapping"}
 
     columns = list(all_values[0].keys())
+    for col in columns:
+        if not re.match(r"^\w+$", col):
+            return {"error": f"Invalid column name: {col}"}
     col_list = ", ".join([f'"{c}"' for c in columns])
 
     def quote(v):

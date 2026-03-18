@@ -294,7 +294,7 @@ PEOPLE & TEAMS:
   - is_user = 1 → can log into the app (username, user_role fields)
   - These are not mutually exclusive — a person can be both an employee and a user.
   - Set is_supervisor=1 for daily report recipients.
-  - Fields: team_role = 'lead' | 'member' | 'backup'. user_role = 'user' | 'admin'. status = 'active' | 'inactive'.
+  - Fields: team_role = 'lead' | 'member' | 'backup'. user_role = 'user' | 'admin' | 'owner'. status = 'active' | 'inactive'.
 - **teams** — Named groups (e.g., "AV Team", "Tech Bar Dublin"). Fields: team_type = 'support' | 'av' | 'operations' | 'management'.
 - **pto** — PTO and leave records for people (employees). Use when someone logs time off, checks who's on leave, or asks about availability on a date. Fields: leave_type = 'pto' | 'sick' | 'personal' | 'bereavement' | 'other'. To find who's on leave on a given date: `WHERE start_date <= '2026-03-15' AND end_date >= '2026-03-15'`. To find who's out this week, use the current week's Monday–Friday range.
 

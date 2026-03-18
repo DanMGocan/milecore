@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS people (
     -- User-specific
     is_user INTEGER DEFAULT 0,
     username TEXT UNIQUE,
-    user_role TEXT DEFAULT 'user',  -- 'user' | 'admin'
+    user_role TEXT DEFAULT 'user',  -- 'user' | 'admin' | 'owner'
     status TEXT DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (site_id) REFERENCES sites(id),

@@ -87,6 +87,14 @@ async def get_user(person_id: int = Query(1)):
     }
 
 
+@router.get("/users/all")
+async def get_all_users():
+    result = execute_query(
+        "SELECT id, first_name, user_role FROM people WHERE is_user = 1 AND status = 'active' ORDER BY id"
+    )
+    return {"users": result.get("rows", [])}
+
+
 @router.get("/sessions")
 async def list_sessions_endpoint(person_id: int = Query(1)):
     return {"sessions": sessions.list_sessions(person_id)}

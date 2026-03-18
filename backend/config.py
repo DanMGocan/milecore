@@ -18,3 +18,7 @@ BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "")
 
 DAILY_REPORT_HOUR = int(os.getenv("DAILY_REPORT_HOUR", "7"))
 DAILY_REPORT_MINUTE = int(os.getenv("DAILY_REPORT_MINUTE", "0"))
+
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",")]
+
+APP_URL = os.getenv("APP_URL", "http://localhost:8000")

@@ -58,7 +58,7 @@ DEFAULT_USERS = [
         "is_user": 1,
         "hire_date": "2021-02-01",
         "username": "dan",
-        "user_role": "admin",
+        "user_role": "owner",
         "is_supervisor": 1,
         "status": "active",
     },
