@@ -15,9 +15,9 @@ def build_frontend():
     node_modules = os.path.join(frontend_dir, "node_modules")
     if not os.path.isdir(node_modules):
         print("Installing frontend dependencies...")
-        subprocess.run(["npm", "install"], cwd=frontend_dir, check=True)
+        subprocess.run(["/usr/bin/npm", "install"], cwd=frontend_dir, check=True)
     print("Building frontend...")
-    subprocess.run(["npm", "run", "build"], cwd=frontend_dir, check=True)
+    subprocess.run(["/usr/bin/npm", "run", "build"], cwd=frontend_dir, check=True)
 
 
 def main():
@@ -53,7 +53,7 @@ def main():
 
     # Start server
     print("\n========================================")
-    print("  MileCore - Site Operations Assistant")
+    print("  TrueCore.cloud - Site Operations Assistant")
     print("  http://localhost:8000")
     print("========================================\n")
 
