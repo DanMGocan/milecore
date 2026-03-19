@@ -88,30 +88,28 @@ def get_generated_file(file_id: str) -> tuple[str, bytes] | None:
 
 
 # Schema DDL cache — cleared when tables are created/dropped
-_schema_cache: str | None = None
+_schema_cache: dict[int, str] = {}
 
 
-def _get_cached_schema() -> str:
+def _get_cached_schema(instance_id) -> str:
     global _schema_cache
-    if _schema_cache is None:
-        _schema_cache = get_schema_ddl()
-    return _schema_cache
+    if instance_id not in _schema_cache:
+        _schema_cache[instance_id] = get_schema_ddl(instance_id=instance_id)
+    return _schema_cache[instance_id]
 
 
 def clear_schema_cache() -> None:
     global _schema_cache
-    _schema_cache = None
+    _schema_cache.clear()
 
 
 def clear_prompt_cache() -> None:
-    _prompt_cache["approval"] = None
-    _prompt_cache["home_site"] = None
-    _prompt_cache["ts"] = 0
+    _prompt_cache.clear()
 
 
-def _build_approval_section() -> str:
-    rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
-    count_result = execute_query("SELECT COUNT(*) as count FROM pending_approvals WHERE status = 'pending'")
+def _build_approval_section(instance_id) -> str:
+    rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1", instance_id=instance_id)
+    count_result = execute_query("SELECT COUNT(*) as count FROM pending_approvals WHERE status = 'pending'", instance_id=instance_id)
     pending_count = count_result["rows"][0]["count"] if count_result.get("rows") else 0
 
     if not rules.get("rows"):
@@ -124,8 +122,8 @@ def _build_approval_section() -> str:
     return "\n".join(lines)
 
 
-def _build_home_site_section() -> str:
-    site = get_home_site()
+def _build_home_site_section(instance_id) -> str:
+    site = get_home_site(instance_id=instance_id)
     if site is None:
         return (
             "HOME SITE:\n"
@@ -178,24 +176,27 @@ def _build_current_user_section(current_user: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
-_prompt_cache: dict = {"approval": None, "home_site": None, "ts": 0}
+_prompt_cache: dict[int, dict] = {}
 
 
-def _build_system_prompt(user_role: str = "admin", current_user: dict[str, Any] | None = None) -> str:
+def _build_system_prompt(user_role: str = "admin", current_user: dict[str, Any] | None = None, instance_id: int = 1) -> str:
     now = time.time()
-    if now - _prompt_cache["ts"] > 60:
-        _prompt_cache["approval"] = _build_approval_section()
-        _prompt_cache["home_site"] = _build_home_site_section()
-        _prompt_cache["ts"] = now
+    cache = _prompt_cache.get(instance_id, {})
+    if now - cache.get("ts", 0) > 60:
+        cache["approval"] = _build_approval_section(instance_id)
+        cache["home_site"] = _build_home_site_section(instance_id)
+        cache["ts"] = now
+        _prompt_cache[instance_id] = cache
     return SYSTEM_TEMPLATE.format(
-        schema_ddl=_get_cached_schema(),
+        schema_ddl=_get_cached_schema(instance_id),
         today=date.today().isoformat(),
         sender_name=BREVO_SENDER_NAME,
         sender_email=BREVO_SENDER_EMAIL,
-        home_site_section=_prompt_cache["home_site"],
+        home_site_section=cache["home_site"],
         user_role_section=_build_user_role_section(user_role),
         current_user_section=_build_current_user_section(current_user),
-        approval_section=_prompt_cache["approval"],
+        approval_section=cache["approval"],
+        instance_id=instance_id,
     )
 
 
@@ -215,7 +216,7 @@ def _build_content(response) -> list[dict[str, Any]]:
     return content
 
 
-def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role: str = "admin") -> list[dict]:
+def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role: str = "admin", instance_id: int = 1) -> list[dict]:
     """Execute tool calls and return tool_result messages. Mutates sql_log."""
     ADMIN_ONLY_TOOLS = {"manage_approval_rules", "review_approvals"}
     tool_results = []
@@ -241,16 +242,17 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             # Check if this is a data write that should go through approval
             is_data_write = sql_upper.startswith(("INSERT", "UPDATE", "DELETE"))
             if is_data_write and tool_name == "execute_sql":
-                rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
+                rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1", instance_id=instance_id)
                 matched_rule = _find_matching_rule(sql, rules.get("rows") or [])
                 if matched_rule:
-                    validation = validate_query(sql)
+                    validation = validate_query(sql, instance_id=instance_id)
                     if not validation.get("valid"):
                         result = {"error": f"SQL validation failed: {validation['error']}"}
                     else:
                         ins = execute_query(
                             "INSERT INTO pending_approvals (sql_statement, explanation, matched_rule_id, matched_rule_description) VALUES (?, ?, ?, ?)",
                             [sql, explanation, matched_rule["id"], matched_rule["description"]],
+                            instance_id=instance_id,
                         )
                         result = {
                             "queued": True,
@@ -263,7 +265,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                     tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
                     continue
 
-            result = execute_query(sql)
+            result = execute_query(sql, instance_id=instance_id)
 
             sql_log.append({
                 "tool": tool_name,
@@ -292,17 +294,20 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 result = execute_query(
                     "INSERT INTO approval_rules (description) VALUES (?)",
                     [desc],
+                    instance_id=instance_id,
                 )
                 result["rule_id"] = result.get("lastrowid")
             elif action == "list":
                 result = execute_query(
-                    "SELECT id, description, is_active, created_at FROM approval_rules ORDER BY id"
+                    "SELECT id, description, is_active, created_at FROM approval_rules ORDER BY id",
+                    instance_id=instance_id,
                 )
             elif action == "remove":
                 rule_id = inp.get("rule_id")
                 result = execute_query(
                     "UPDATE approval_rules SET is_active = 0 WHERE id = ?",
                     [rule_id],
+                    instance_id=instance_id,
                 )
             else:
                 result = {"error": f"Unknown action: {action}"}
@@ -316,13 +321,14 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
 
         elif tool_name == "submit_for_approval":
             inp = block["input"]
-            validation = validate_query(inp["sql"])
+            validation = validate_query(inp["sql"], instance_id=instance_id)
             if not validation.get("valid"):
                 result = {"error": f"SQL validation failed: {validation['error']}"}
             else:
                 ins = execute_query(
                     "INSERT INTO pending_approvals (sql_statement, explanation, matched_rule_id, matched_rule_description) VALUES (?, ?, ?, ?)",
                     [inp["sql"], inp["explanation"], inp["matched_rule_id"], inp["matched_rule_description"]],
+                    instance_id=instance_id,
                 )
                 result = {
                     "queued": True,
@@ -345,27 +351,31 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
 
             if action == "list":
                 result = execute_query(
-                    "SELECT id, sql_statement, explanation, matched_rule_description, status, created_at FROM pending_approvals WHERE status = 'pending' ORDER BY created_at"
+                    "SELECT id, sql_statement, explanation, matched_rule_description, status, created_at FROM pending_approvals WHERE status = 'pending' ORDER BY created_at",
+                    instance_id=instance_id,
                 )
             elif action == "approve":
                 approval_id = inp.get("approval_id")
                 approval = execute_query(
                     "SELECT sql_statement FROM pending_approvals WHERE id = ? AND status = 'pending'",
                     [approval_id],
+                    instance_id=instance_id,
                 )
                 if approval.get("rows"):
                     stored_sql = approval["rows"][0]["sql_statement"]
-                    exec_result = execute_query(stored_sql)
+                    exec_result = execute_query(stored_sql, instance_id=instance_id)
                     if "error" in exec_result:
                         execute_query(
                             "UPDATE pending_approvals SET status = 'failed', review_note = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
                             [f"Execution failed: {exec_result['error']}", approval_id],
+                            instance_id=instance_id,
                         )
                         result = {"approved": False, "approval_id": approval_id, "execution_error": exec_result["error"]}
                     else:
                         execute_query(
                             "UPDATE pending_approvals SET status = 'approved', review_note = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
                             [inp.get("note", ""), approval_id],
+                            instance_id=instance_id,
                         )
                         result = {"approved": True, "approval_id": approval_id, "execution_result": exec_result}
                 else:
@@ -375,6 +385,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 execute_query(
                     "UPDATE pending_approvals SET status = 'rejected', review_note = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
                     [inp.get("note", ""), approval_id],
+                    instance_id=instance_id,
                 )
                 result = {"rejected": True, "approval_id": approval_id}
             else:
@@ -397,18 +408,19 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 result = gen
             else:
                 # Validate the SQL before queuing or executing
-                validation = validate_query(gen["sql"])
+                validation = validate_query(gen["sql"], instance_id=instance_id)
                 if not validation.get("valid"):
                     result = {"error": f"SQL validation failed: {validation['error']}"}
                 else:
                     # Check if any approval rules match this import
-                    rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1")
+                    rules = execute_query("SELECT id, description FROM approval_rules WHERE is_active = 1", instance_id=instance_id)
                     matched_rule = _find_matching_rule(gen["sql"], rules.get("rows") or [])
                     if matched_rule:
                         approval_result = execute_query(
                             "INSERT INTO pending_approvals (sql_statement, explanation, matched_rule_id, matched_rule_description) VALUES (?, ?, ?, ?)",
                             [gen["sql"], inp.get("explanation", f"CSV import: {gen['total_rows']} rows into {gen['table']}"),
                              matched_rule["id"], matched_rule["description"]],
+                            instance_id=instance_id,
                         )
                         # Queued successfully — remove staged file
                         remove_staged_file(inp["file_id"])
@@ -422,7 +434,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                         }
                     else:
                         # No rules — execute directly
-                        result = execute_query(gen["sql"])
+                        result = execute_query(gen["sql"], instance_id=instance_id)
                         result["rows_inserted"] = result.get("rowcount", 0)
                         result["skipped"] = gen["skipped"]
                         # Only remove staged file after successful execution
@@ -443,10 +455,28 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
 
         elif tool_name == "send_email":
             inp = block["input"]
+
+            # Check if email addon is enabled for this instance
+            addon_check = execute_query(
+                "SELECT email_addon, email_signature FROM instances WHERE id = ?",
+                [instance_id],
+                instance_id=None,
+            )
+            if addon_check.get("rows") and not addon_check["rows"][0].get("email_addon"):
+                result = {"error": "Email addon is not enabled for this instance. The instance owner can enable it from the billing section in the dashboard ($4.99/mo)."}
+                sql_log.append({"tool": "send_email", "action": f"Email to {inp['to_email']}: {inp['subject']}", "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
+
+            # Append email signature if set
+            body = inp["body"]
+            if addon_check.get("rows") and addon_check["rows"][0].get("email_signature"):
+                body = body + "\n\n" + addon_check["rows"][0]["email_signature"]
+
             result = smtp_send_email(
                 to_email=inp["to_email"],
                 subject=inp["subject"],
-                body=inp["body"],
+                body=body,
                 to_name=inp.get("to_name", ""),
             )
 
@@ -480,7 +510,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 error = None
 
                 for sheet_def in sheets:
-                    query_result = execute_query(sheet_def["sql"])
+                    query_result = execute_query(sheet_def["sql"], instance_id=instance_id)
                     if "error" in query_result:
                         error = query_result["error"]
                         break
@@ -524,7 +554,101 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 "content": json.dumps(result),
             })
 
+        elif tool_name == "invite_user":
+            inp = block["input"]
+            email = inp["email"].strip().lower()
+            name = inp.get("name", "").strip()
+            role = inp.get("role", "user")
+
+            if user_role != "owner":
+                result = {"error": "Only the instance owner can invite users."}
+            elif role not in ("user", "admin"):
+                result = {"error": "Role must be 'user' or 'admin'."}
+            else:
+                # Check if invitation already exists
+                existing = execute_query(
+                    "SELECT id, status FROM instance_invitations WHERE instance_id = ? AND email = ?",
+                    [instance_id, email],
+                    instance_id=None,
+                )
+                if existing.get("rows") and existing["rows"][0]["status"] == "pending":
+                    result = {"error": f"An invitation for {email} is already pending."}
+                else:
+                    # Create or update invitation
+                    if existing.get("rows"):
+                        execute_query(
+                            "UPDATE instance_invitations SET status = 'pending', role = ?, "
+                            "expires_at = NOW() + INTERVAL '7 days' WHERE instance_id = ? AND email = ?",
+                            [role, instance_id, email],
+                            instance_id=None,
+                        )
+                    else:
+                        execute_query(
+                            "INSERT INTO instance_invitations (instance_id, email, role) VALUES (?, ?, ?)",
+                            [instance_id, email, role],
+                            instance_id=None,
+                        )
+
+                    # Send invitation email
+                    from backend.config import APP_URL
+                    email_result = smtp_send_email(
+                        to_email=email,
+                        subject=f"You're invited to join TrueCore.cloud",
+                        body=(
+                            f"Hi {name},\n\n"
+                            f"You've been invited to join a TrueCore.cloud instance as a {role}.\n\n"
+                            f"To accept this invitation:\n"
+                            f"1. Go to {APP_URL}\n"
+                            f"2. Sign up with this email address ({email})\n"
+                            f"3. Click 'Join an Instance' to accept\n\n"
+                            f"This invitation expires in 7 days.\n\n"
+                            f"— TrueCore.cloud"
+                        ),
+                        to_name=name,
+                    )
+                    result = {
+                        "success": True,
+                        "email": email,
+                        "role": role,
+                        "email_sent": email_result,
+                        "message": f"Invitation sent to {name} ({email}) as {role}.",
+                    }
+
+            sql_log.append({"tool": "invite_user", "action": f"Invite {email}", "result": result})
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block["id"],
+                "content": json.dumps(result),
+            })
+
     return tool_results
+
+
+def _increment_query_count(instance_id: int) -> dict | None:
+    """Increment the query count for an instance. Returns error dict if limit exceeded."""
+    result = execute_query(
+        "SELECT query_count, query_limit FROM instances WHERE id = ?",
+        [instance_id],
+        instance_id=None,
+    )
+    if not result.get("rows"):
+        return {"error": "Instance not found"}
+
+    row = result["rows"][0]
+    if row["query_count"] >= row["query_limit"]:
+        return {
+            "error": "Query limit reached",
+            "query_count": row["query_count"],
+            "query_limit": row["query_limit"],
+            "message": "This instance has reached its query limit. Please upgrade your plan to continue.",
+        }
+
+    execute_query(
+        "UPDATE instances SET query_count = query_count + 1 WHERE id = ?",
+        [instance_id],
+        instance_id=None,
+    )
+    return None
 
 
 def chat_stream(
@@ -533,13 +657,21 @@ def chat_stream(
     state: dict[str, Any],
     user_role: str = "admin",
     current_user: dict[str, Any] | None = None,
+    instance_id: int = 1,
 ) -> Generator[str, None, None]:
     """Stream a chat response as SSE events.
 
     Yields SSE-formatted strings (event: type\\ndata: json\\n\\n).
     Populates state["history"] with the updated message history when done.
     """
-    system_prompt = _build_system_prompt(user_role, current_user)
+    # Check query limit before processing
+    limit_error = _increment_query_count(instance_id)
+    if limit_error:
+        yield f"event: token\ndata: {json.dumps({'text': limit_error['message']})}\n\n"
+        yield f"event: done\ndata: {json.dumps({'sql_executed': []})}\n\n"
+        return
+
+    system_prompt = _build_system_prompt(user_role, current_user, instance_id=instance_id)
     messages = list(history) + [{"role": "user", "content": user_message}]
     sql_log: list[dict[str, Any]] = []
 
@@ -571,7 +703,7 @@ def chat_stream(
 
         if response.stop_reason == "tool_use":
             sql_log_before = len(sql_log)
-            tool_results = _execute_tools(assistant_content, sql_log, user_role)
+            tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id)
             # Notify frontend about each SQL/file operation
             for entry in sql_log[sql_log_before:]:
                 if entry.get("tool") == "generate_excel":
@@ -586,9 +718,22 @@ def chat(
     history: list[dict[str, Any]],
     user_role: str = "admin",
     current_user: dict[str, Any] | None = None,
+    instance_id: int = 1,
 ) -> dict[str, Any]:
     """Non-streaming chat (kept as fallback)."""
-    system_prompt = _build_system_prompt(user_role, current_user)
+    # Check query limit before processing
+    limit_error = _increment_query_count(instance_id)
+    if limit_error:
+        return {
+            "response": limit_error["message"],
+            "sql_executed": [],
+            "history": list(history) + [
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": [{"type": "text", "text": limit_error["message"]}]},
+            ],
+        }
+
+    system_prompt = _build_system_prompt(user_role, current_user, instance_id=instance_id)
     messages = list(history) + [{"role": "user", "content": user_message}]
     sql_log: list[dict[str, Any]] = []
 
@@ -618,5 +763,5 @@ def chat(
             }
 
         if response.stop_reason == "tool_use":
-            tool_results = _execute_tools(assistant_content, sql_log, user_role)
+            tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id)
             messages.append({"role": "user", "content": tool_results})

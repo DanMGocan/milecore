@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MileCore entry point. Wipes and reinitializes database on every run, then starts the server."""
+"""TrueCore.cloud entry point. Initializes PostgreSQL schema and starts the server."""
 
 import os
 import subprocess
@@ -33,20 +33,36 @@ def main():
     else:
         print("No spare API key configured (set ANTHROPIC_API_KEY_SPARE for fallback)")
 
-    db_path = os.getenv("DATABASE_PATH", "milecore.db")
-    schema_path = os.getenv("SCHEMA_PATH", "schema.sql")
+    database_url = os.getenv("DATABASE_URL", "postgresql://truecore:truecore@localhost:5432/truecore")
+    schema_path = os.getenv("SCHEMA_PATH", "schema_pg.sql")
 
-    from backend.database import init_db
+    from backend.database import init_pool, init_db, shutdown_pool, execute_query
     from initial_seed import seed_initial_data
 
-    for f in [db_path, db_path + "-shm", db_path + "-wal"]:
-        if os.path.exists(f):
-            os.remove(f)
-    print(f"Initializing fresh database: {db_path}")
+    # Initialize the connection pool
+    print(f"Connecting to PostgreSQL...")
+    init_pool(database_url)
+
+    # Initialize schema (CREATE TABLE IF NOT EXISTS equivalent — safe to re-run)
+    print(f"Initializing database schema from {schema_path}...")
     init_db(schema_path)
 
-    print("Applying initial seed...")
-    seed_initial_data()
+    # Create default instance if it doesn't exist
+    result = execute_query("SELECT id FROM instances WHERE id = 1", instance_id=None)
+    if not result.get("rows"):
+        print("Creating default instance...")
+        execute_query(
+            "INSERT INTO instances (name, slug, tier, status, query_count, query_limit) "
+            "VALUES ('Demo Instance', 'demo', 'free', 'active', 0, 200)",
+            instance_id=None,
+        )
+
+    # Apply initial seed for instance 1
+    print("Applying initial seed for default instance...")
+    seed_initial_data(instance_id=1)
+
+    # Close pool before starting uvicorn (it will create its own via lifespan)
+    shutdown_pool()
 
     # Build frontend
     build_frontend()

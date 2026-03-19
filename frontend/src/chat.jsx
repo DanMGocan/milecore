@@ -148,7 +148,7 @@ const PROMPTS = [
     { text: 'Does the town hall in the canteen today need audio/video support?', color: '#f472b6' },
 ];
 
-export function ChatPage({ personId = 1, currentUser, allUsers = [], onSwitchUser, onDemoBannerClick }) {
+export function ChatPage({ currentUser }) {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -159,24 +159,30 @@ export function ChatPage({ personId = 1, currentUser, allUsers = [], onSwitchUse
     const [sessions, setSessions] = useState([]);
     const [pendingFile, setPendingFile] = useState(null);
     const [badgeIndex, setBadgeIndex] = useState(0);
+    const [usage, setUsage] = useState(null);
     const messagesEnd = useRef(null);
     const fileRef = useRef(null);
     const streamRafRef = useRef(null);
-    const userProfilePic = profilePics[personId % 2 === 0 ? 1 : 0];
+    const userProfilePic = profilePics[0];
     const assistantProfilePic = profilePics[2];
     const sidebarDisplayName = currentUser?.display_name || '...';
     const sidebarJobTitle = currentUser?.job_title || '';
     const isAdmin = ['admin', 'owner'].includes(currentUser?.role);
 
     const loadSessions = () => {
-        fetch(`/api/sessions?person_id=${personId}`).then(r => r.json()).then(d => setSessions(d.sessions || [])).catch(() => {});
+        fetch('/api/sessions', { credentials: 'include' }).then(r => r.json()).then(d => setSessions(d.sessions || [])).catch(() => {});
+    };
+
+    const loadUsage = () => {
+        fetch('/api/dashboard/usage', { credentials: 'include' }).then(r => r.ok ? r.json() : null).then(d => d && setUsage(d)).catch(() => {});
     };
 
     useEffect(() => {
         setSessionId(null);
         setMessages([]);
         loadSessions();
-    }, [personId]);
+        loadUsage();
+    }, []);
 
     useEffect(() => {
         loadSessions();
@@ -256,7 +262,8 @@ export function ChatPage({ personId = 1, currentUser, allUsers = [], onSwitchUse
             const res = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: messageToSend, session_id: sessionId, person_id: personId }),
+                body: JSON.stringify({ message: messageToSend, session_id: sessionId }),
+                credentials: 'include',
             });
 
             if (!res.ok) {
@@ -336,6 +343,7 @@ export function ChatPage({ personId = 1, currentUser, allUsers = [], onSwitchUse
             setMessages(prev => [...prev, { role: 'error', text: err.message }]);
         } finally {
             setLoading(false);
+            loadUsage();
         }
     };
 
@@ -399,10 +407,23 @@ export function ChatPage({ personId = 1, currentUser, allUsers = [], onSwitchUse
                             </div>
                         </div>
                     </div>
+                    {usage && (
+                        <div className="sidebar-usage">
+                            <div className="sidebar-usage-bar">
+                                <div className="sidebar-usage-fill" style={{ width: `${Math.min(100, (usage.query_count / usage.query_limit) * 100)}%` }} />
+                            </div>
+                            <span className="sidebar-usage-text">
+                                {usage.queries_remaining} / {usage.query_limit} queries left
+                                {usage.seat_count > 1 && ` (${usage.seat_count} users)`}
+                            </span>
+                            {usage.query_pool_reset_at && (
+                                <span className="sidebar-usage-reset">
+                                    Resets {new Date(usage.query_pool_reset_at).toLocaleDateString()}
+                                </span>
+                            )}
+                        </div>
+                    )}
                     <div className="sidebar-user-row">
-                        <select className="btn btn-sm user-select" value={personId} onChange={e => onSwitchUser(Number(e.target.value))}>
-                            {allUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} ({u.user_role})</option>)}
-                        </select>
                         <button className="btn btn-sm" onClick={() => setSettingsOpen(true)} title="Settings">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="12" cy="12" r="3"/>
@@ -464,9 +485,6 @@ export function ChatPage({ personId = 1, currentUser, allUsers = [], onSwitchUse
                     <div ref={messagesEnd} />
                 </div>
                 <div className="chat-input-container">
-                    <button className="demo-banner" onClick={onDemoBannerClick} type="button">
-                        Are you a Demo user, from the Milestone Hackathon? Please click me first!
-                    </button>
                     <div className="chat-input-card">
                         <div className="chat-input-wrapper">
                             <textarea

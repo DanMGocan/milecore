@@ -1,13 +1,14 @@
 import os
 import re
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from backend.auth import InstanceContext, get_current_instance
 from backend.claude_client import clear_prompt_cache, clear_schema_cache
 from backend.config import APP_URL, SCHEMA_PATH
 from backend.email_sender import send_email
-from backend.database import _lock, get_connection, reset_db
+from backend.database import execute_query, reset_instance
 from initial_seed import seed_initial_data
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,87 +16,144 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 router = APIRouter(prefix="/dashboard")
 
 
-def _query(sql: str, params: list | None = None) -> list[dict]:
-    conn = get_connection()
-    with _lock:
-        cursor = conn.execute(sql, params or [])
-        columns = [d[0] for d in cursor.description] if cursor.description else []
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+def _query(sql: str, params: list | None = None, instance_id: int = 1) -> list[dict]:
+    result = execute_query(sql, params, instance_id=instance_id)
+    return result.get("rows", [])
 
 
-def _count(sql: str) -> int:
-    conn = get_connection()
-    with _lock:
-        return conn.execute(sql).fetchone()[0]
+def _count(sql: str, instance_id: int = 1) -> int:
+    result = execute_query(sql, instance_id=instance_id)
+    rows = result.get("rows", [])
+    if rows:
+        # Return the first column value of the first row
+        first_row = rows[0]
+        if isinstance(first_row, dict):
+            return list(first_row.values())[0]
+    return 0
 
 
 @router.get("/overview")
-async def overview():
+async def overview(ctx: InstanceContext = Depends(get_current_instance)):
     row = _query(
         "SELECT "
-        "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'active') AS active_assets, "
-        "(SELECT COUNT(*) FROM requests WHERE status IN ('open', 'in_progress')) AS open_requests, "
-        "(SELECT COUNT(*) FROM technical_issues WHERE resolution IS NULL) AS open_issues, "
-        "(SELECT COUNT(*) FROM events WHERE DATE(start_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', '+7 days')) AS events_this_week, "
-        "(SELECT COUNT(*) FROM technical_issues WHERE important=1) + "
-        "(SELECT COUNT(*) FROM requests WHERE important=1) + "
-        "(SELECT COUNT(*) FROM events WHERE important=1) + "
-        "(SELECT COUNT(*) FROM notes WHERE important=1) + "
-        "(SELECT COUNT(*) FROM changes WHERE important=1) + "
-        "(SELECT COUNT(*) FROM work_logs WHERE important=1) + "
-        "(SELECT COUNT(*) FROM assets WHERE important=1) + "
-        "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1) AS important_items"
+        "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'active' AND instance_id = ?) AS active_assets, "
+        "(SELECT COUNT(*) FROM requests WHERE status IN ('open', 'in_progress') AND instance_id = ?) AS open_requests, "
+        "(SELECT COUNT(*) FROM technical_issues WHERE resolution IS NULL AND instance_id = ?) AS open_issues, "
+        "(SELECT COUNT(*) FROM events WHERE DATE(start_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', '+7 days') AND instance_id = ?) AS events_this_week, "
+        "(SELECT COUNT(*) FROM technical_issues WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM requests WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM events WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM notes WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM changes WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM work_logs WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM assets WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1 AND instance_id = ?) AS important_items",
+        [ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
+         ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
+         ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
     )[0]
-    push = _query("SELECT value FROM app_settings WHERE key = 'last_push_at'")
+    push = _query(
+        "SELECT value FROM app_settings WHERE key = 'last_push_at' AND instance_id = ?",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
     row["last_push"] = push[0]["value"] if push else None
     return row
 
 
+@router.get("/usage")
+async def instance_usage(ctx: InstanceContext = Depends(get_current_instance)):
+    """Return the current instance's query usage and limits."""
+    result = execute_query(
+        "SELECT name, tier, query_count, query_limit, email_addon, daily_reports_addon, "
+        "status, query_pool_reset_at FROM instances WHERE id = ?",
+        [ctx.instance_id],
+        instance_id=None,
+    )
+    if not result.get("rows"):
+        return {"error": "Instance not found"}
+    row = result["rows"][0]
+
+    # Count active members for pool breakdown
+    member_result = execute_query(
+        "SELECT COUNT(*) as cnt FROM instance_memberships WHERE instance_id = ?",
+        [ctx.instance_id],
+        instance_id=None,
+    )
+    seat_count = member_result["rows"][0]["cnt"] if member_result.get("rows") else 1
+
+    return {
+        "instance_name": row["name"],
+        "tier": row["tier"],
+        "query_count": row["query_count"],
+        "query_limit": row["query_limit"],
+        "queries_remaining": max(0, row["query_limit"] - row["query_count"]),
+        "email_addon": row["email_addon"],
+        "daily_reports_addon": row["daily_reports_addon"],
+        "status": row["status"],
+        "query_pool_reset_at": str(row["query_pool_reset_at"]) if row.get("query_pool_reset_at") else None,
+        "seat_count": seat_count,
+        "base_queries": seat_count * 250,
+    }
+
+
 @router.get("/assets-by-period")
-async def assets_by_period():
+async def assets_by_period(ctx: InstanceContext = Depends(get_current_instance)):
     data = _query(
         "SELECT DATE(created_at) as date, COUNT(*) as count FROM assets "
-        "WHERE created_at IS NOT NULL "
-        "GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 30"
+        "WHERE created_at IS NOT NULL AND instance_id = ? "
+        "GROUP BY DATE(created_at) ORDER BY date DESC LIMIT 30",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     data.reverse()
     return {"data": data}
 
 
 @router.get("/issues-summary")
-async def issues_summary():
+async def issues_summary(ctx: InstanceContext = Depends(get_current_instance)):
     by_status = _query(
-        "SELECT status, COUNT(*) as count FROM requests GROUP BY status ORDER BY count DESC"
+        "SELECT status, COUNT(*) as count FROM requests WHERE instance_id = ? GROUP BY status ORDER BY count DESC",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     by_severity = _query(
         "SELECT severity, COUNT(*) as count FROM technical_issues "
-        "WHERE severity IS NOT NULL GROUP BY severity ORDER BY count DESC"
+        "WHERE severity IS NOT NULL AND instance_id = ? GROUP BY severity ORDER BY count DESC",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     return {"by_status": by_status, "by_severity": by_severity}
 
 
 @router.get("/vendor-visits")
-async def vendor_visits():
+async def vendor_visits(ctx: InstanceContext = Depends(get_current_instance)):
     data = _query(
         "SELECT status, COUNT(*) as count FROM events "
-        "WHERE LOWER(event_type) LIKE '%vendor%' OR LOWER(event_type) LIKE '%visit%' "
-        "GROUP BY status"
+        "WHERE (LOWER(event_type) LIKE '%vendor%' OR LOWER(event_type) LIKE '%visit%') AND instance_id = ? "
+        "GROUP BY status",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     return {"data": data}
 
 
 @router.get("/staff-per-site")
-async def staff_per_site():
+async def staff_per_site(ctx: InstanceContext = Depends(get_current_instance)):
     data = _query(
         "SELECT s.name as site, COUNT(p.id) as count "
-        "FROM sites s LEFT JOIN people p ON p.site_id = s.id AND p.employer_id IS NOT NULL AND p.status = 'active' "
-        "GROUP BY s.id, s.name ORDER BY count DESC"
+        "FROM sites s LEFT JOIN people p ON p.site_id = s.id AND p.employer_id IS NOT NULL AND p.status = 'active' AND p.instance_id = ? "
+        "WHERE s.instance_id = ? "
+        "GROUP BY s.id, s.name ORDER BY count DESC",
+        [ctx.instance_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     return {"data": data}
 
 
 @router.post("/seed-demo")
-async def seed_demo():
+async def seed_demo(ctx: InstanceContext = Depends(get_current_instance)):
     """Seed the database with demo data from the xlsx file."""
     import openpyxl
 
@@ -104,15 +162,18 @@ async def seed_demo():
         return {"ok": False, "error": "Demo data file not found"}
 
     # Check if demo data has already been seeded (initial seed only has 1 company)
-    conn = get_connection()
-    row = conn.execute("SELECT COUNT(*) FROM companies").fetchone()
-    if row and row[0] > 1:
+    result = execute_query(
+        "SELECT COUNT(*) as cnt FROM companies WHERE instance_id = ?",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
+    count = result["rows"][0]["cnt"] if result.get("rows") else 0
+    if count > 1:
         return {"ok": False, "already_seeded": True,
                 "error": "The database already contains demo data. Please reset the database from the Dashboard page first."}
 
     try:
         wb = openpyxl.load_workbook(xlsx_path)
-        conn = get_connection()
 
         # Insert order respects FK constraints
         sheet_order = [
@@ -122,29 +183,29 @@ async def seed_demo():
 
         total_inserted = 0
 
-        with _lock:
-            for table_name in sheet_order:
-                if table_name not in wb.sheetnames:
-                    continue
-                ws = wb[table_name]
-                headers = [cell.value for cell in ws[1]]
-                if not headers:
-                    continue
-                if not all(isinstance(h, str) and re.match(r"^\w+$", h) for h in headers):
-                    continue
+        for table_name in sheet_order:
+            if table_name not in wb.sheetnames:
+                continue
+            ws = wb[table_name]
+            headers = [cell.value for cell in ws[1]]
+            if not headers:
+                continue
+            if not all(isinstance(h, str) and re.match(r"^\w+$", h) for h in headers):
+                continue
 
-                cols = ", ".join(headers)
-                placeholders = ", ".join(["?"] * len(headers))
+            # Add instance_id to the columns
+            cols = ", ".join(headers) + ", instance_id"
+            placeholders = ", ".join(["?"] * len(headers)) + ", ?"
 
-                for row_idx in range(2, ws.max_row + 1):
-                    values = [cell.value for cell in ws[row_idx]]
-                    conn.execute(
-                        f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})",
-                        values,
-                    )
-                    total_inserted += 1
-
-            conn.commit()
+            for row_idx in range(2, ws.max_row + 1):
+                values = [cell.value for cell in ws[row_idx]]
+                values.append(ctx.instance_id)
+                execute_query(
+                    f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})",
+                    values,
+                    instance_id=ctx.instance_id,
+                )
+                total_inserted += 1
 
         clear_schema_cache()
         clear_prompt_cache()
@@ -155,9 +216,9 @@ async def seed_demo():
 
 
 @router.post("/reset-database")
-async def reset_database():
+async def reset_database(ctx: InstanceContext = Depends(get_current_instance)):
     try:
-        reset_db(SCHEMA_PATH)
+        reset_instance(ctx.instance_id)
         seed_initial_data()
         clear_schema_cache()
         clear_prompt_cache()
@@ -169,10 +230,12 @@ async def reset_database():
 # --- User Management ---
 
 @router.get("/users")
-async def list_users():
+async def list_users(ctx: InstanceContext = Depends(get_current_instance)):
     users = _query(
         "SELECT id, first_name, last_name, email, username, user_role, role_title, status "
-        "FROM people WHERE is_user = 1 ORDER BY id"
+        "FROM people WHERE is_user = 1 AND instance_id = ? ORDER BY id",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     return {"users": users}
 
@@ -186,12 +249,14 @@ class AddUserRequest(BaseModel):
 
 
 @router.post("/users")
-async def add_user(req: AddUserRequest):
+async def add_user(req: AddUserRequest, ctx: InstanceContext = Depends(get_current_instance)):
     if req.role not in ("user", "admin"):
         return {"error": "Role must be 'user' or 'admin'"}
 
     requester = _query(
-        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [req.requesting_person_id]
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1 AND instance_id = ?",
+        [req.requesting_person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     if not requester:
         return {"error": "Requesting user not found"}
@@ -205,19 +270,21 @@ async def add_user(req: AddUserRequest):
     base_username = req.first_name.lower().strip()
     username = base_username
     suffix = 1
-    while _query("SELECT 1 FROM people WHERE username = ?", [username]):
+    while _query(
+        "SELECT 1 FROM people WHERE username = ? AND instance_id = ?",
+        [username, ctx.instance_id],
+        instance_id=ctx.instance_id,
+    ):
         suffix += 1
         username = f"{base_username}{suffix}"
 
-    conn = get_connection()
-    with _lock:
-        conn.execute(
-            "INSERT INTO people (first_name, last_name, email, is_user, username, user_role, status) "
-            "VALUES (?, ?, ?, 1, ?, ?, 'active')",
-            [req.first_name.strip(), req.last_name.strip(), req.email.strip(), username, req.role],
-        )
-        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        conn.commit()
+    result = execute_query(
+        "INSERT INTO people (first_name, last_name, email, is_user, username, user_role, status, instance_id) "
+        "VALUES (?, ?, ?, 1, ?, ?, 'active', ?)",
+        [req.first_name.strip(), req.last_name.strip(), req.email.strip(), username, req.role, ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
+    new_id = result.get("lastrowid")
 
     email_result = send_email(
         to_email=req.email.strip(),
@@ -227,7 +294,7 @@ async def add_user(req: AddUserRequest):
             f"You've been added to TrueCore.cloud as a {req.role}.\n"
             f"Your username is: {username}\n\n"
             f"Access TrueCore.cloud here: {APP_URL}\n\n"
-            f"— TrueCore.cloud"
+            f"-- TrueCore.cloud"
         ),
         to_name=f"{req.first_name.strip()} {req.last_name.strip()}",
     )
@@ -236,15 +303,21 @@ async def add_user(req: AddUserRequest):
 
 
 @router.delete("/users/{person_id}")
-async def remove_user(person_id: int, requesting_person_id: int = Query(...)):
-    target = _query("SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id])
+async def remove_user(person_id: int, requesting_person_id: int = Query(...), ctx: InstanceContext = Depends(get_current_instance)):
+    target = _query(
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1 AND instance_id = ?",
+        [person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
     if not target:
         return {"error": "User not found"}
     if target[0]["user_role"] == "owner":
         return {"error": "Cannot remove the owner"}
 
     requester = _query(
-        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [requesting_person_id]
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1 AND instance_id = ?",
+        [requesting_person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     if not requester:
         return {"error": "Requesting user not found"}
@@ -256,12 +329,11 @@ async def remove_user(person_id: int, requesting_person_id: int = Query(...)):
     if requester_role not in ("owner", "admin"):
         return {"error": "Insufficient permissions"}
 
-    conn = get_connection()
-    with _lock:
-        conn.execute(
-            "UPDATE people SET is_user = 0, status = 'inactive' WHERE id = ?", [person_id]
-        )
-        conn.commit()
+    execute_query(
+        "UPDATE people SET is_user = 0, status = 'inactive' WHERE id = ? AND instance_id = ?",
+        [person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
 
     return {"ok": True}
 
@@ -272,25 +344,32 @@ class ChangeRoleRequest(BaseModel):
 
 
 @router.patch("/users/{person_id}/role")
-async def change_user_role(person_id: int, req: ChangeRoleRequest):
+async def change_user_role(person_id: int, req: ChangeRoleRequest, ctx: InstanceContext = Depends(get_current_instance)):
     if req.new_role not in ("user", "admin"):
         return {"error": "Role must be 'user' or 'admin'"}
 
     requester = _query(
-        "SELECT user_role FROM people WHERE id = ? AND is_user = 1", [req.requesting_person_id]
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1 AND instance_id = ?",
+        [req.requesting_person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     if not requester or requester[0]["user_role"] != "owner":
         return {"error": "Only the owner can change roles"}
 
-    target = _query("SELECT user_role FROM people WHERE id = ? AND is_user = 1", [person_id])
+    target = _query(
+        "SELECT user_role FROM people WHERE id = ? AND is_user = 1 AND instance_id = ?",
+        [person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
     if not target:
         return {"error": "User not found"}
     if target[0]["user_role"] == "owner":
         return {"error": "Cannot change the owner's role"}
 
-    conn = get_connection()
-    with _lock:
-        conn.execute("UPDATE people SET user_role = ? WHERE id = ?", [req.new_role, person_id])
-        conn.commit()
+    execute_query(
+        "UPDATE people SET user_role = ? WHERE id = ? AND instance_id = ?",
+        [req.new_role, person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
 
     return {"ok": True}

@@ -1886,6 +1886,32 @@ select.form-input {
     appearance: auto;
 }
 
+/* Sidebar Usage Bar */
+.sidebar-usage {
+    padding: 0 12px;
+    margin-bottom: 8px;
+}
+
+.sidebar-usage-bar {
+    height: 4px;
+    background: var(--bg-primary);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.sidebar-usage-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.sidebar-usage-text {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
 /* Recharts dark theme overrides */
 .recharts-text {
     fill: var(--text-muted) !important;
@@ -3344,4 +3370,226 @@ select.form-input {
     .app-content {
         height: calc(100dvh - 52px);
     }
+}
+
+/* === Billing Section === */
+.billing-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.billing-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.billing-label {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.billing-value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.billing-status {
+    font-weight: 600;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.billing-status-active { color: var(--success); background: rgba(74, 222, 128, 0.12); }
+.billing-status-past_due, .billing-status-payment_failed { color: var(--error); background: rgba(248, 113, 113, 0.12); }
+.billing-status-canceled, .billing-status-cancelled { color: var(--text-muted); background: var(--bg-tertiary); }
+
+.billing-usage {
+    margin-bottom: 16px;
+}
+
+.billing-usage-bar {
+    height: 8px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 8px 0;
+}
+
+.billing-usage-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.billing-pool-breakdown {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.billing-reset-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.billing-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.billing-addons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.billing-addon {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    padding: 12px;
+}
+
+.billing-addon-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.billing-addon-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.billing-addon-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.billing-addon-price {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.billing-addon-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* Toggle switch */
+.billing-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.billing-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.billing-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: var(--bg-hover);
+    border-radius: 11px;
+    transition: background 0.2s;
+}
+
+.billing-toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--text-primary);
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.billing-toggle input:checked + .billing-toggle-slider {
+    background: var(--accent);
+}
+
+.billing-toggle input:checked + .billing-toggle-slider::before {
+    transform: translateX(18px);
+}
+
+.billing-toggle input:disabled + .billing-toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.billing-signature {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.billing-signature-input {
+    resize: vertical;
+    min-height: 60px;
+    font-size: 13px;
+}
+
+.billing-events {
+    margin-top: 12px;
+}
+
+.billing-event-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.billing-event-row:last-child {
+    border-bottom: none;
+}
+
+.billing-event-type {
+    color: var(--text-primary);
+    font-weight: 500;
+    text-transform: capitalize;
+    min-width: 100px;
+}
+
+.billing-event-detail {
+    color: var(--text-secondary);
+    flex: 1;
+}
+
+.billing-event-date {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.sidebar-usage-reset {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 2px;
 }

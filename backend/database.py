@@ -1,76 +1,262 @@
+"""PostgreSQL database layer using psycopg v3 with connection pooling.
+
+Replaces the previous SQLite-based implementation. All tenant-scoped functions
+accept an ``instance_id`` parameter that sets a PostgreSQL session variable
+(``app.current_instance_id``) so that Row-Level Security policies can filter
+rows automatically.
+"""
+
+from __future__ import annotations
+
 import re
-import sqlite3
 import threading
 from typing import Any
 
-from backend.config import DATABASE_PATH
+import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
+# ---------------------------------------------------------------------------
+# Backward-compatibility shim: other modules import ``_lock`` and use it with
+# ``with _lock:``.  The connection pool handles concurrency so the lock is a
+# no-op, but keeping it avoids import errors in files such as dashboard.py,
+# sessions.py, daily_report.py and initial_seed.py.
+# ---------------------------------------------------------------------------
 _lock = threading.Lock()
-_connection: sqlite3.Connection | None = None
+
+# Global tables that are NOT tenant-scoped (excluded from schema DDL, table
+# listings, and the reset operation).
+_GLOBAL_TABLES = frozenset({
+    "auth_users",
+    "instances",
+    "instance_memberships",
+    "instance_invitations",
+})
+
+# ---------------------------------------------------------------------------
+# Connection pool
+# ---------------------------------------------------------------------------
+_pool: ConnectionPool | None = None
 
 
-def get_connection() -> sqlite3.Connection:
-    global _connection
-    if _connection is None:
-        _connection = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
-        _connection.row_factory = sqlite3.Row
-        _connection.execute("PRAGMA journal_mode=WAL")
-        _connection.execute("PRAGMA foreign_keys=ON")
-    return _connection
+def init_pool(dsn: str, *, min_size: int = 5, max_size: int = 20) -> None:
+    """Create the global connection pool.
 
+    Must be called once at application startup before any database access.
 
-def close_connection() -> None:
-    global _connection
-    if _connection is not None:
-        _connection.close()
-        _connection = None
-
-
-def get_schema_ddl() -> str:
-    conn = get_connection()
-    cursor = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL ORDER BY name"
+    Args:
+        dsn: PostgreSQL connection string
+             (e.g. ``"postgresql://user:pass@host:5432/dbname"``).
+        min_size: Minimum number of connections kept open.
+        max_size: Maximum number of connections the pool will create.
+    """
+    global _pool
+    if _pool is not None:
+        return  # Already initialised – idempotent
+    _pool = ConnectionPool(
+        conninfo=dsn,
+        min_size=min_size,
+        max_size=max_size,
+        kwargs={"row_factory": dict_row},
     )
-    statements = [row[0] for row in cursor.fetchall()]
-    return ";\n\n".join(statements) + ";" if statements else ""
 
 
-def execute_query(sql: str, params: list | None = None) -> dict[str, Any]:
-    conn = get_connection()
-    sql_stripped = sql.strip().upper()
+def shutdown_pool() -> None:
+    """Close the global pool and release all connections."""
+    global _pool
+    if _pool is not None:
+        _pool.close()
+        _pool = None
 
-    with _lock:
+
+def _get_pool() -> ConnectionPool:
+    """Return the global pool, raising if it has not been initialised."""
+    if _pool is None:
+        raise RuntimeError(
+            "Connection pool has not been initialised. Call init_pool() first."
+        )
+    return _pool
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility: get_connection()
+# ---------------------------------------------------------------------------
+
+def get_connection() -> psycopg.Connection:
+    """Return a connection from the pool.
+
+    This is exported for files that still call ``get_connection()`` directly
+    (e.g. dashboard.py, sessions.py).  Callers are responsible for closing /
+    returning the connection (the pool context manager is preferred).
+    """
+    return _get_pool().getconn()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _set_instance(conn: psycopg.Connection, instance_id: int | None) -> None:
+    """Set the ``app.current_instance_id`` session variable for RLS.
+
+    The ``true`` parameter to ``set_config`` means the value is reset at
+    transaction end.
+    """
+    if instance_id is not None:
+        conn.execute(
+            "SELECT set_config('app.current_instance_id', %s, true)",
+            [str(instance_id)],
+        )
+
+
+def _translate_placeholders(sql: str) -> str:
+    """Replace SQLite-style ``?`` placeholders with ``%s`` for psycopg.
+
+    Only bare ``?`` tokens are replaced — occurrences inside string literals
+    or identifiers are left alone.  This provides backward compatibility for
+    the dozens of call-sites that still pass ``?`` parameters.
+    """
+    # Fast path: nothing to translate
+    if "?" not in sql:
+        return sql
+
+    # Walk the SQL character-by-character so we can skip string literals.
+    out: list[str] = []
+    i = 0
+    length = len(sql)
+    while i < length:
+        ch = sql[i]
+        if ch == "'":
+            # Skip single-quoted string literal
+            j = i + 1
+            while j < length:
+                if sql[j] == "'" and j + 1 < length and sql[j + 1] == "'":
+                    j += 2  # escaped quote
+                elif sql[j] == "'":
+                    j += 1
+                    break
+                else:
+                    j += 1
+            out.append(sql[i:j])
+            i = j
+        elif ch == '"':
+            # Skip double-quoted identifier
+            j = i + 1
+            while j < length:
+                if sql[j] == '"' and j + 1 < length and sql[j + 1] == '"':
+                    j += 2  # escaped quote
+                elif sql[j] == '"':
+                    j += 1
+                    break
+                else:
+                    j += 1
+            out.append(sql[i:j])
+            i = j
+        elif ch == "?":
+            out.append("%s")
+            i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Core query execution
+# ---------------------------------------------------------------------------
+
+def execute_query(
+    sql: str,
+    params: list | None = None,
+    instance_id: int | None = None,
+) -> dict[str, Any]:
+    """Execute a SQL statement and return results as a dict.
+
+    For SELECT / PRAGMA-like queries the return dict contains:
+        ``{"columns": [...], "rows": [...], "rowcount": N}``
+
+    For write statements (INSERT / UPDATE / DELETE / CREATE / …):
+        ``{"rowcount": N, "lastrowid": M}``
+
+    On error:
+        ``{"error": "message"}``
+
+    If the SQL is an INSERT that does not already contain a ``RETURNING``
+    clause, ``RETURNING id`` is appended automatically so that ``lastrowid``
+    is populated.
+
+    Args:
+        sql: SQL statement.  May use ``?`` placeholders (translated to ``%s``).
+        params: Optional bind parameters.
+        instance_id: Tenant id — sets the RLS session variable.
+    """
+    pool = _get_pool()
+    sql_pg = _translate_placeholders(sql)
+    sql_stripped = sql_pg.strip().upper()
+
+    # Auto-append RETURNING id for INSERT when not already present
+    is_insert = sql_stripped.startswith("INSERT")
+    if is_insert and "RETURNING" not in sql_stripped:
+        sql_pg = sql_pg.rstrip().rstrip(";") + " RETURNING id"
+
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
         try:
-            cursor = conn.execute(sql, params or [])
+            cur = conn.execute(sql_pg, params or [])
 
-            if sql_stripped.startswith("SELECT") or sql_stripped.startswith("PRAGMA"):
-                columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                rows = [dict(row) for row in cursor.fetchall()]
+            if sql_stripped.startswith(("SELECT", "PRAGMA", "WITH")):
+                columns = [desc.name for desc in cur.description] if cur.description else []
+                rows = cur.fetchall()  # list[dict] thanks to dict_row
                 return {"columns": columns, "rows": rows, "rowcount": len(rows)}
-            else:
-                conn.commit()
-                result = {"rowcount": cursor.rowcount, "lastrowid": cursor.lastrowid}
 
-                # Auto audit log for write operations
-                _log_audit(sql, cursor.lastrowid)
+            # Write operation
+            lastrowid: int | None = None
+            if is_insert and cur.description:
+                row = cur.fetchone()
+                if row is not None:
+                    # dict_row → {"id": <value>}
+                    lastrowid = row.get("id") if isinstance(row, dict) else row[0]
 
-                return result
+            conn.commit()
+
+            result: dict[str, Any] = {
+                "rowcount": cur.rowcount if cur.rowcount and cur.rowcount >= 0 else 0,
+                "lastrowid": lastrowid,
+            }
+
+            # Auto audit log for write operations
+            _log_audit(conn, sql, lastrowid, instance_id)
+
+            return result
         except Exception as e:
             conn.rollback()
             return {"error": str(e)}
 
 
-def _log_audit(sql: str, lastrowid: int | None) -> None:
-    """Auto-populate audit_log for INSERT/UPDATE/DELETE operations."""
+# ---------------------------------------------------------------------------
+# Audit logging
+# ---------------------------------------------------------------------------
+
+def _log_audit(
+    conn: psycopg.Connection,
+    sql: str,
+    lastrowid: int | None,
+    instance_id: int | None,
+) -> None:
+    """Auto-populate ``audit_log`` for INSERT / UPDATE / DELETE operations.
+
+    Uses the same connection so that the audit row is part of the same
+    transaction context.  Failures are silently swallowed so as not to
+    break the primary operation.
+    """
     sql_upper = sql.strip().upper()
 
-    # Don't log audit_log writes to avoid recursion
+    # Avoid recursion — don't log writes to audit_log itself
     if "AUDIT_LOG" in sql_upper:
         return
 
-    # Extract table name and action
-    action = None
-    table_name = None
+    action: str | None = None
+    table_name: str | None = None
 
     if sql_upper.startswith("INSERT"):
         action = "INSERT"
@@ -90,156 +276,336 @@ def _log_audit(sql: str, lastrowid: int | None) -> None:
 
     if action and table_name:
         entity_id = lastrowid if lastrowid else 0
-        conn = get_connection()
         try:
+            _set_instance(conn, instance_id)
             conn.execute(
-                "INSERT INTO audit_log (entity_type, entity_id, action) VALUES (?, ?, ?)",
-                [table_name, entity_id, action],
+                "INSERT INTO audit_log (entity_type, entity_id, action, instance_id) "
+                "VALUES (%s, %s, %s, %s)",
+                [table_name, entity_id, action, instance_id],
             )
             conn.commit()
         except Exception:
             pass  # Don't fail the main operation if audit logging fails
 
 
-def validate_query(sql: str, params: list | None = None) -> dict[str, Any]:
-    """Dry-run a write query using SAVEPOINT. Returns success or error without committing."""
-    conn = get_connection()
-    with _lock:
+# ---------------------------------------------------------------------------
+# Query validation (dry-run via SAVEPOINT)
+# ---------------------------------------------------------------------------
+
+def validate_query(
+    sql: str,
+    params: list | None = None,
+    instance_id: int | None = None,
+) -> dict[str, Any]:
+    """Dry-run a write query inside a SAVEPOINT.
+
+    Returns ``{"valid": True, "rowcount": N}`` on success or
+    ``{"valid": False, "error": "…"}`` on failure.  The database is never
+    modified.
+    """
+    pool = _get_pool()
+    sql_pg = _translate_placeholders(sql)
+
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
         try:
             conn.execute("SAVEPOINT validation")
-            cursor = conn.execute(sql, params or [])
-            rowcount = cursor.rowcount
-            conn.execute("ROLLBACK TO validation")
-            conn.execute("RELEASE validation")
+            cur = conn.execute(sql_pg, params or [])
+            rowcount = cur.rowcount if cur.rowcount and cur.rowcount >= 0 else 0
+            conn.execute("ROLLBACK TO SAVEPOINT validation")
+            conn.execute("RELEASE SAVEPOINT validation")
             return {"valid": True, "rowcount": rowcount}
         except Exception as e:
             try:
-                conn.execute("ROLLBACK TO validation")
-                conn.execute("RELEASE validation")
+                conn.execute("ROLLBACK TO SAVEPOINT validation")
+                conn.execute("RELEASE SAVEPOINT validation")
             except Exception:
                 conn.rollback()
             return {"valid": False, "error": str(e)}
 
 
-def get_home_site() -> dict[str, Any] | None:
-    """Return the configured home site or None."""
-    conn = get_connection()
-    cursor = conn.execute(
-        "SELECT s.id, s.name, c.name as client_name, s.city "
-        "FROM app_settings a JOIN sites s ON s.id = CAST(a.value AS INTEGER) "
-        "LEFT JOIN companies c ON s.client_id = c.id "
-        "WHERE a.key = 'home_site_id'"
-    )
-    row = cursor.fetchone()
-    if row is None:
-        return None
-    return {"id": row[0], "name": row[1], "client_name": row[2], "city": row[3]}
+# ---------------------------------------------------------------------------
+# Schema introspection
+# ---------------------------------------------------------------------------
+
+def get_schema_ddl(instance_id: int | None = None) -> str:
+    """Reconstruct CREATE TABLE statements from ``information_schema``.
+
+    Global tables (auth_users, instances, …) and the ``instance_id`` column
+    are excluded — the AI does not need to see them because the application
+    injects ``instance_id`` automatically.
+    """
+    pool = _get_pool()
+
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
+        cur = conn.execute(
+            """
+            SELECT table_name, column_name, data_type,
+                   is_nullable, column_default, ordinal_position
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+            ORDER BY table_name, ordinal_position
+            """
+        )
+        rows = cur.fetchall()
+
+    # Group columns by table
+    tables: dict[str, list[dict]] = {}
+    for row in rows:
+        tname = row["table_name"]
+        if tname in _GLOBAL_TABLES:
+            continue
+        if row["column_name"] == "instance_id":
+            continue
+        tables.setdefault(tname, []).append(row)
+
+    statements: list[str] = []
+    for tname in sorted(tables):
+        col_defs: list[str] = []
+        for col in tables[tname]:
+            parts = [col["column_name"], col["data_type"].upper()]
+            if col["is_nullable"] == "NO":
+                parts.append("NOT NULL")
+            if col["column_default"] is not None:
+                parts.append(f"DEFAULT {col['column_default']}")
+            col_defs.append("  " + " ".join(parts))
+        stmt = f"CREATE TABLE {tname} (\n" + ",\n".join(col_defs) + "\n)"
+        statements.append(stmt)
+
+    return ";\n\n".join(statements) + ";" if statements else ""
 
 
-def get_tables() -> list[str]:
-    conn = get_connection()
-    cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    )
-    return [row[0] for row in cursor.fetchall()]
+def get_tables(instance_id: int | None = None) -> list[str]:
+    """Return a sorted list of public table names, excluding global tables."""
+    pool = _get_pool()
+
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
+        cur = conn.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' ORDER BY table_name"
+        )
+        rows = cur.fetchall()
+
+    return [r["table_name"] for r in rows if r["table_name"] not in _GLOBAL_TABLES]
 
 
 def get_table_schema(table_name: str) -> list[dict[str, Any]]:
-    conn = get_connection()
-    # Validate table name to prevent injection
+    """Return column metadata for *table_name*.
+
+    Each dict contains: ``name``, ``type``, ``notnull``, ``pk``,
+    ``default_value``.
+    """
     if not re.match(r"^\w+$", table_name):
         return []
-    cursor = conn.execute(f"PRAGMA table_info({table_name})")
+
+    pool = _get_pool()
+
+    with pool.connection() as conn:
+        cur = conn.execute(
+            """
+            SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
+                   CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_pk
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.table_name = %s
+                    AND tc.constraint_type = 'PRIMARY KEY'
+            ) pk ON pk.column_name = c.column_name
+            WHERE c.table_name = %s AND c.table_schema = 'public'
+            ORDER BY c.ordinal_position
+            """,
+            [table_name, table_name],
+        )
+        rows = cur.fetchall()
+
     return [
         {
-            "cid": row[0],
-            "name": row[1],
-            "type": row[2],
-            "notnull": bool(row[3]),
-            "default_value": row[4],
-            "pk": bool(row[5]),
+            "name": row["column_name"],
+            "type": row["data_type"],
+            "notnull": row["is_nullable"] == "NO",
+            "pk": bool(row["is_pk"]),
+            "default_value": row["column_default"],
         }
-        for row in cursor.fetchall()
+        for row in rows
     ]
 
 
-def get_all_table_rows(table_name: str) -> tuple[list[str], list[tuple]]:
-    """Return (column_names, rows) for an entire table, without rowid."""
-    if not re.match(r"^\w+$", table_name):
-        return [], []
-    conn = get_connection()
-    with _lock:
-        cursor = conn.execute(f"SELECT * FROM {table_name}")
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        rows = cursor.fetchall()
-    return columns, [tuple(row) for row in rows]
+# ---------------------------------------------------------------------------
+# Table data access
+# ---------------------------------------------------------------------------
 
+def get_table_rows(
+    table_name: str,
+    limit: int = 50,
+    offset: int = 0,
+    instance_id: int | None = None,
+) -> dict[str, Any]:
+    """Return paginated rows from *table_name*.
 
-def get_table_rows(table_name: str, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    Returns ``{"columns": [...], "rows": [...], "total": N}``.
+    """
     if not re.match(r"^\w+$", table_name):
         return {"error": "Invalid table name"}
 
-    conn = get_connection()
-    with _lock:
-        # Get total count
-        count_cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
-        total = count_cursor.fetchone()[0]
+    pool = _get_pool()
 
-        cursor = conn.execute(f"SELECT rowid, * FROM {table_name} LIMIT ? OFFSET ?", [limit, offset])
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        rows = [dict(row) for row in cursor.fetchall()]
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
+
+        # Total count
+        count_cur = conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM {table_name} WHERE instance_id = %s",
+            [instance_id],
+        )
+        total = count_cur.fetchone()["cnt"]
+
+        cur = conn.execute(
+            f"SELECT * FROM {table_name} WHERE instance_id = %s "
+            f"LIMIT %s OFFSET %s",
+            [instance_id, limit, offset],
+        )
+        columns = [desc.name for desc in cur.description] if cur.description else []
+        rows = cur.fetchall()
 
     return {"columns": columns, "rows": rows, "total": total}
 
 
-def reset_db(schema_path: str) -> None:
-    """Drop all tables and re-create from schema file."""
-    conn = get_connection()
-    with _lock:
-        conn.execute("PRAGMA foreign_keys=OFF")
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()
-        for (name,) in tables:
-            conn.execute(f"DROP TABLE IF EXISTS {name}")
-        conn.commit()
-        conn.execute("PRAGMA foreign_keys=ON")
-    init_db(schema_path)
+def get_all_table_rows(
+    table_name: str,
+    instance_id: int | None = None,
+) -> tuple[list[str], list[tuple]]:
+    """Return ``(column_names, rows)`` for all rows in *table_name*.
 
+    Rows are returned as tuples for backward compatibility with the Excel
+    export code.
+    """
+    if not re.match(r"^\w+$", table_name):
+        return [], []
+
+    pool = _get_pool()
+
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
+        cur = conn.execute(
+            f"SELECT * FROM {table_name} WHERE instance_id = %s",
+            [instance_id],
+        )
+        columns = [desc.name for desc in cur.description] if cur.description else []
+        rows = cur.fetchall()
+
+    # Convert dict rows to tuples
+    return columns, [tuple(r[c] for c in columns) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Home site
+# ---------------------------------------------------------------------------
+
+def get_home_site(instance_id: int | None = None) -> dict[str, Any] | None:
+    """Return the configured home site or ``None``."""
+    pool = _get_pool()
+
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
+        cur = conn.execute(
+            "SELECT s.id, s.name, c.name AS client_name, s.city "
+            "FROM app_settings a "
+            "JOIN sites s ON s.id = CAST(a.value AS INTEGER) "
+            "LEFT JOIN companies c ON s.client_id = c.id "
+            "WHERE a.key = 'home_site_id' AND a.instance_id = %s",
+            [instance_id],
+        )
+        row = cur.fetchone()
+
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "client_name": row["client_name"],
+        "city": row["city"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Database initialisation / reset
+# ---------------------------------------------------------------------------
 
 def init_db(schema_path: str) -> None:
-    """Initialize database from schema file."""
+    """Initialise the database from a SQL schema file.
+
+    Reads the file, splits on ``;``, and executes each statement
+    individually (``executescript`` is SQLite-specific).
+    """
     with open(schema_path, "r") as f:
         schema_sql = f.read()
 
-    conn = get_connection()
-    conn.execute("PRAGMA foreign_keys=OFF")
-    conn.executescript(schema_sql)
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.commit()
+    pool = _get_pool()
 
-
-def migrate_db(schema_path: str) -> None:
-    """Apply schema migrations idempotently on an existing database."""
-    # Re-run schema (all CREATE TABLE IF NOT EXISTS, safe on existing DB)
-    init_db(schema_path)
-
-    # Add important column to tables that may not have it yet
-    conn = get_connection()
-    important_tables = [
-        "technical_issues", "requests", "events", "notes",
-        "changes", "work_logs", "assets", "inventory_transactions", "workflows",
-    ]
-    for table in important_tables:
-        try:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN important INTEGER DEFAULT 0")
-            conn.commit()
-        except Exception:
-            pass  # Column already exists
-
-    # Add needs_support column to events
-    try:
-        conn.execute("ALTER TABLE events ADD COLUMN needs_support INTEGER NOT NULL DEFAULT 0")
+    with pool.connection() as conn:
+        statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
+        for stmt in statements:
+            conn.execute(stmt)
         conn.commit()
-    except Exception:
-        pass
+
+
+def reset_instance(instance_id: int) -> None:
+    """Delete all tenant-scoped data for *instance_id*.
+
+    Tables are deleted in an order that respects foreign-key constraints
+    (children first).  This replaces the old ``reset_db`` which dropped and
+    recreated tables.
+    """
+    # Ordered from leaf tables (most dependent) to parent tables.
+    tenant_tables = [
+        "audit_log",
+        "chat_messages",
+        "chat_sessions",
+        "pending_approvals",
+        "approval_rules",
+        "inventory_transactions",
+        "work_logs",
+        "workflows",
+        "notes",
+        "changes",
+        "events",
+        "technical_issues",
+        "requests",
+        "assets",
+        "inventory_items",
+        "rooms",
+        "people",
+        "teams",
+        "sites",
+        "companies",
+        "app_settings",
+    ]
+
+    pool = _get_pool()
+
+    with pool.connection() as conn:
+        _set_instance(conn, instance_id)
+        for table in tenant_tables:
+            try:
+                conn.execute(
+                    f"DELETE FROM {table} WHERE instance_id = %s",
+                    [instance_id],
+                )
+            except Exception:
+                pass  # Table may not exist yet
+        conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Backward compatibility alias
+# ---------------------------------------------------------------------------
+# ``reset_db`` was imported by dashboard.py.  Point it at ``reset_instance``
+# so existing call-sites do not break (they will need to start passing
+# ``instance_id`` eventually).
+reset_db = reset_instance

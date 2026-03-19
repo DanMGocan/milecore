@@ -3,6 +3,7 @@ import {
     BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell,
     ResponsiveContainer, CartesianGrid,
 } from 'recharts';
+import { BillingSection } from './billing';
 
 const COLORS = ['#6c8cff', '#4ade80', '#f87171', '#fbbf24', '#a78bfa', '#38bdf8'];
 
@@ -64,7 +65,7 @@ function EmptyChart() {
     );
 }
 
-export function DashboardPage({ currentUser, onRefreshUsers }) {
+export function DashboardPage({ currentUser }) {
     const [overview, setOverview] = useState(null);
     const [assets, setAssets] = useState([]);
     const [issues, setIssues] = useState({ by_status: [], by_severity: [] });
@@ -94,7 +95,7 @@ export function DashboardPage({ currentUser, onRefreshUsers }) {
             setAddingUser(false);
             setNewUser({ first_name: '', last_name: '', email: '', role: 'user' });
             loadUsers();
-            onRefreshUsers?.();
+            loadUsers();
         } else {
             alert(data.error || 'Failed to add user');
         }
@@ -104,7 +105,7 @@ export function DashboardPage({ currentUser, onRefreshUsers }) {
         if (!window.confirm('Remove this user?')) return;
         const res = await fetch(`/api/dashboard/users/${personId}?requesting_person_id=${currentUser?.person_id}`, { method: 'DELETE' });
         const data = await res.json();
-        if (data.ok) { loadUsers(); onRefreshUsers?.(); }
+        if (data.ok) { loadUsers(); loadUsers(); }
         else alert(data.error || 'Failed to remove user');
     };
 
@@ -115,7 +116,7 @@ export function DashboardPage({ currentUser, onRefreshUsers }) {
             body: JSON.stringify({ new_role: newRole, requesting_person_id: currentUser?.person_id }),
         });
         const data = await res.json();
-        if (data.ok) { loadUsers(); onRefreshUsers?.(); }
+        if (data.ok) { loadUsers(); loadUsers(); }
         else alert(data.error || 'Failed to change role');
     };
 
@@ -274,6 +275,10 @@ export function DashboardPage({ currentUser, onRefreshUsers }) {
                 <p className="dashboard-footer-text">
                     Version pushed to GitHub at: {new Date(overview.last_push).toLocaleString()}
                 </p>
+            )}
+
+            {currentUser?.role === 'owner' && (
+                <BillingSection currentUser={currentUser} />
             )}
 
             {isPrivileged && (

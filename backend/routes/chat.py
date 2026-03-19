@@ -1,11 +1,12 @@
 import io
 import json
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend import sessions
+from backend.auth import InstanceContext, get_current_instance
 from backend.claude_client import chat, chat_stream, get_generated_file
 from backend.database import execute_query, get_home_site
 
@@ -15,7 +16,6 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
-    person_id: int = 1
 
 
 class ChatResponse(BaseModel):
@@ -24,7 +24,7 @@ class ChatResponse(BaseModel):
     sql_executed: list
 
 
-def _get_current_user(person_id: int) -> dict | None:
+def _get_current_user(person_id: int, instance_id: int = 1) -> dict | None:
     result = execute_query(
         """
         SELECT
@@ -44,9 +44,10 @@ def _get_current_user(person_id: int) -> dict | None:
         FROM people p
         LEFT JOIN sites s ON s.id = p.site_id
         LEFT JOIN teams t ON t.id = p.team_id
-        WHERE p.id = ? AND p.is_user = 1
+        WHERE p.id = ? AND p.is_user = 1 AND p.instance_id = ?
         """,
-        [person_id],
+        [person_id, instance_id],
+        instance_id=instance_id,
     )
     if not result.get("rows"):
         return None
@@ -68,16 +69,18 @@ def _get_current_user(person_id: int) -> dict | None:
 
 
 @router.get("/home-site")
-async def home_site_endpoint():
-    site = get_home_site()
+async def home_site_endpoint(ctx: InstanceContext = Depends(get_current_instance)):
+    site = get_home_site(instance_id=ctx.instance_id)
     return {"home_site": site}
 
 
 @router.get("/user")
-async def get_user(person_id: int = Query(1)):
-    current_user = _get_current_user(person_id)
+async def get_user(ctx: InstanceContext = Depends(get_current_instance)):
+    if not ctx.person_id:
+        return {"person_id": None, "username": ctx.email, "display_name": ctx.display_name, "job_title": "", "role": ctx.role}
+    current_user = _get_current_user(ctx.person_id, ctx.instance_id)
     if not current_user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return {"person_id": ctx.person_id, "username": ctx.email, "display_name": ctx.display_name, "job_title": "", "role": ctx.role}
     return {
         "person_id": current_user["person_id"],
         "username": current_user["username"],
@@ -88,21 +91,24 @@ async def get_user(person_id: int = Query(1)):
 
 
 @router.get("/users/all")
-async def get_all_users():
+async def get_all_users(ctx: InstanceContext = Depends(get_current_instance)):
     result = execute_query(
-        "SELECT id, first_name, user_role FROM people WHERE is_user = 1 AND status = 'active' ORDER BY id"
+        "SELECT id, first_name, user_role FROM people WHERE is_user = 1 AND status = 'active' AND instance_id = ? ORDER BY id",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
     )
     return {"users": result.get("rows", [])}
 
 
 @router.get("/sessions")
-async def list_sessions_endpoint(person_id: int = Query(1)):
-    return {"sessions": sessions.list_sessions(person_id)}
+async def list_sessions_endpoint(ctx: InstanceContext = Depends(get_current_instance)):
+    person_id = ctx.person_id or 0
+    return {"sessions": sessions.list_sessions(person_id, ctx.instance_id)}
 
 
 @router.get("/sessions/{session_id}")
-async def get_session_endpoint(session_id: str):
-    history = sessions.get_session(session_id)
+async def get_session_endpoint(session_id: str, ctx: InstanceContext = Depends(get_current_instance)):
+    history = sessions.get_session(session_id, ctx.instance_id)
     if history is None:
         raise HTTPException(status_code=404, detail="Session not found")
     display_messages = []
@@ -122,40 +128,40 @@ async def get_session_endpoint(session_id: str):
 
 
 @router.post("/chat/stream")
-async def chat_stream_endpoint(req: ChatRequest):
+async def chat_stream_endpoint(req: ChatRequest, ctx: InstanceContext = Depends(get_current_instance)):
     session_id = req.session_id
-    person_id = req.person_id
-    history = sessions.get_session(session_id) if session_id else None
+    person_id = ctx.person_id or 0
+    history = sessions.get_session(session_id, ctx.instance_id) if session_id else None
     if history is None:
-        session_id = sessions.create_session(person_id)
+        session_id = sessions.create_session(person_id, ctx.instance_id)
         history = []
 
-    current_user = _get_current_user(person_id)
-    user_role = current_user["role"] if current_user else "user"
+    current_user = _get_current_user(person_id, ctx.instance_id) if person_id else None
+    user_role = current_user["role"] if current_user else ctx.role
     state = {}
 
     def generate():
         yield f"event: session\ndata: {json.dumps({'session_id': session_id})}\n\n"
-        yield from chat_stream(req.message, history, state, user_role, current_user)
+        yield from chat_stream(req.message, history, state, user_role, current_user, instance_id=ctx.instance_id)
         if "history" in state:
-            sessions.save_history(session_id, state["history"])
+            sessions.save_history(session_id, state["history"], ctx.instance_id)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(req: ChatRequest):
+async def chat_endpoint(req: ChatRequest, ctx: InstanceContext = Depends(get_current_instance)):
     session_id = req.session_id
-    person_id = req.person_id
-    history = sessions.get_session(session_id) if session_id else None
+    person_id = ctx.person_id or 0
+    history = sessions.get_session(session_id, ctx.instance_id) if session_id else None
     if history is None:
-        session_id = sessions.create_session(person_id)
+        session_id = sessions.create_session(person_id, ctx.instance_id)
         history = []
 
-    current_user = _get_current_user(person_id)
-    user_role = current_user["role"] if current_user else "user"
-    result = chat(req.message, history, user_role, current_user)
-    sessions.save_history(session_id, result["history"])
+    current_user = _get_current_user(person_id, ctx.instance_id) if person_id else None
+    user_role = current_user["role"] if current_user else ctx.role
+    result = chat(req.message, history, user_role, current_user, instance_id=ctx.instance_id)
+    sessions.save_history(session_id, result["history"], ctx.instance_id)
 
     return ChatResponse(
         response=result["response"],
@@ -178,14 +184,18 @@ async def download_generated_file(file_id: str):
 
 
 @router.get("/approvals/pending-count")
-async def pending_approvals_count():
-    result = execute_query("SELECT COUNT(*) as count FROM pending_approvals WHERE status = 'pending'")
+async def pending_approvals_count(ctx: InstanceContext = Depends(get_current_instance)):
+    result = execute_query(
+        "SELECT COUNT(*) as count FROM pending_approvals WHERE status = 'pending' AND instance_id = ?",
+        [ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
     count = result["rows"][0]["count"] if result.get("rows") else 0
     return {"pending_count": count}
 
 
 @router.post("/admin/send-daily-report")
-async def trigger_daily_report():
+async def trigger_daily_report(ctx: InstanceContext = Depends(get_current_instance)):
     from backend.daily_report import generate_and_send_daily_reports
-    result = generate_and_send_daily_reports()
+    result = generate_and_send_daily_reports(ctx.instance_id)
     return {"status": "sent", "details": result}

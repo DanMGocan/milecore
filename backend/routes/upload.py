@@ -7,6 +7,7 @@ import uuid
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from backend.auth import InstanceContext, get_current_instance
 from backend.database import execute_query, get_tables
 
 router = APIRouter()
@@ -66,7 +67,7 @@ async def stage_csv(file: UploadFile = File(...)):
     }
 
 
-def import_staged_csv(file_id: str, table: str, column_mapping: dict[str, str]) -> dict:
+def import_staged_csv(file_id: str, table: str, column_mapping: dict[str, str], instance_id: int = 1) -> dict:
     """Import a staged CSV into the database with column remapping."""
     staged = _load_staged(file_id)
     if staged is None:
@@ -86,16 +87,19 @@ def import_staged_csv(file_id: str, table: str, column_mapping: dict[str, str]) 
                 mapped[table_col] = row[csv_col]
 
         mapped.pop("id", None)
+        mapped.pop("instance_id", None)
 
         if not mapped:
             rows_skipped += 1
             continue
 
+        # Add instance_id
+        mapped["instance_id"] = instance_id
         columns = ", ".join([f'"{k}"' for k in mapped.keys()])
         placeholders = ", ".join(["?"] * len(mapped))
         values = list(mapped.values())
-        sql = f"INSERT OR IGNORE INTO {table} ({columns}) VALUES ({placeholders})"
-        result = execute_query(sql, values)
+        sql = f"INSERT INTO {table} ({columns}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+        result = execute_query(sql, values, instance_id=instance_id)
 
         if "error" in result:
             errors.append(f"Row {i + 1}: {result['error']}")
@@ -118,7 +122,7 @@ def remove_staged_file(file_id: str) -> None:
         os.remove(path)
 
 
-def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str]) -> dict:
+def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str], instance_id: int = 1) -> dict:
     """Generate a complete INSERT statement from a staged CSV."""
     staged = _load_staged(file_id)
     if staged is None:
@@ -146,6 +150,8 @@ def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str]
     for col in columns:
         if not re.match(r"^\w+$", col):
             return {"error": f"Invalid column name: {col}"}
+    # Add instance_id column
+    columns.append("instance_id")
     col_list = ", ".join([f'"{c}"' for c in columns])
 
     def quote(v):
@@ -155,9 +161,9 @@ def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str]
 
     row_strs = []
     for vals in all_values:
-        row_strs.append("(" + ", ".join(quote(vals.get(c)) for c in columns) + ")")
+        row_strs.append("(" + ", ".join(quote(vals.get(c)) for c in columns[:-1]) + f", {instance_id})")
 
-    sql = f"INSERT OR IGNORE INTO {table} ({col_list}) VALUES\n" + ",\n".join(row_strs)
+    sql = f"INSERT INTO {table} ({col_list}) VALUES\n" + ",\n".join(row_strs) + "\nON CONFLICT DO NOTHING"
 
     return {
         "sql": sql,
@@ -168,7 +174,7 @@ def generate_import_sql(file_id: str, table: str, column_mapping: dict[str, str]
 
 
 @router.post("/upload")
-async def upload_csv(file: UploadFile = File(...), table_name: str | None = None):
+async def upload_csv(file: UploadFile = File(...), table_name: str | None = None, ctx: InstanceContext = Depends(get_current_instance)):
     if not file.filename or not file.filename.endswith((".csv", ".CSV")):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
@@ -189,24 +195,25 @@ async def upload_csv(file: UploadFile = File(...), table_name: str | None = None
         table_name = file.filename.rsplit(".", 1)[0].lower().replace(" ", "_").replace("-", "_")
 
     # Create table if it doesn't exist
-    existing = get_tables()
+    existing = get_tables(instance_id=ctx.instance_id)
     if table_name not in existing:
         columns = rows[0].keys()
         col_defs = ", ".join([f'"{col}" TEXT' for col in columns])
-        create_sql = f'CREATE TABLE {table_name} (id INTEGER PRIMARY KEY, {col_defs})'
-        result = execute_query(create_sql)
+        create_sql = f'CREATE TABLE {table_name} (id BIGSERIAL PRIMARY KEY, {col_defs}, instance_id BIGINT NOT NULL REFERENCES instances(id))'
+        result = execute_query(create_sql, instance_id=ctx.instance_id)
         if "error" in result:
             raise HTTPException(status_code=400, detail=f"Failed to create table: {result['error']}")
 
-    # Insert rows
+    # Insert rows with instance_id
     inserted = 0
     errors = []
     for i, row in enumerate(rows):
-        columns = ", ".join([f'"{k}"' for k in row.keys()])
-        placeholders = ", ".join(["?"] * len(row))
-        values = list(row.values())
+        data_keys = list(row.keys()) + ["instance_id"]
+        columns = ", ".join([f'"{k}"' for k in data_keys])
+        placeholders = ", ".join(["?"] * len(data_keys))
+        values = list(row.values()) + [ctx.instance_id]
         sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
-        result = execute_query(sql, values)
+        result = execute_query(sql, values, instance_id=ctx.instance_id)
         if "error" in result:
             errors.append(f"Row {i + 1}: {result['error']}")
         else:
