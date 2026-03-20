@@ -31,6 +31,8 @@ _GLOBAL_TABLES = frozenset({
     "instances",
     "instance_memberships",
     "instance_invitations",
+    "inbound_email_senders",
+    "inbound_emails",
 })
 
 # ---------------------------------------------------------------------------
@@ -540,8 +542,8 @@ def get_home_site(instance_id: int | None = None) -> dict[str, Any] | None:
 def init_db(schema_path: str) -> None:
     """Initialise the database from a SQL schema file.
 
-    Reads the file, splits on ``;``, and executes each statement
-    individually (``executescript`` is SQLite-specific).
+    Drops and recreates the public schema so the database always matches
+    the current schema file exactly.  Safe to call on every startup.
     """
     with open(schema_path, "r") as f:
         schema_sql = f.read()
@@ -549,6 +551,10 @@ def init_db(schema_path: str) -> None:
     pool = _get_pool()
 
     with pool.connection() as conn:
+        conn.execute("DROP SCHEMA public CASCADE")
+        conn.execute("CREATE SCHEMA public")
+        conn.commit()
+
         statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
         for stmt in statements:
             conn.execute(stmt)

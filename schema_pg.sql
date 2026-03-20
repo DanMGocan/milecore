@@ -27,6 +27,7 @@ CREATE TABLE instances (
     query_count INTEGER DEFAULT 0,
     query_limit INTEGER DEFAULT 60,
     email_addon BOOLEAN DEFAULT FALSE,
+    inbound_email_addon BOOLEAN NOT NULL DEFAULT FALSE,
     stripe_subscription_id TEXT,
     billing_owner_id BIGINT REFERENCES auth_users(id),
     daily_reports_addon BOOLEAN NOT NULL DEFAULT FALSE,
@@ -589,6 +590,34 @@ CREATE TABLE subscription_events (
     details TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Inbound Email Routing
+CREATE TABLE inbound_email_senders (
+    id BIGSERIAL PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    pattern TEXT NOT NULL,
+    pattern_type TEXT NOT NULL DEFAULT 'domain',
+    added_by_auth_user_id BIGINT REFERENCES auth_users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(instance_id, pattern)
+);
+CREATE INDEX idx_inbound_senders_instance ON inbound_email_senders(instance_id);
+
+CREATE TABLE inbound_emails (
+    id BIGSERIAL PRIMARY KEY,
+    instance_id BIGINT REFERENCES instances(id),
+    sender_email TEXT NOT NULL,
+    sender_name TEXT,
+    subject TEXT,
+    body_plain TEXT,
+    from_domain TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    technical_issue_id BIGINT,
+    error_message TEXT,
+    brevo_message_id TEXT,
+    received_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_inbound_emails_instance ON inbound_emails(instance_id);
 
 -- ============================================================
 -- 3. TRIGGER FUNCTION + TRIGGERS

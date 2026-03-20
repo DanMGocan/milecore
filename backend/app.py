@@ -17,6 +17,7 @@ from backend.routes.database_browser import router as browser_router
 from backend.routes.upload import router as upload_router
 from backend.routes.dashboard import router as dashboard_router
 from backend.routes.billing_routes import router as billing_router
+from backend.routes.inbound_email_routes import router as inbound_email_router
 
 
 async def _daily_report_loop():
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(upload_router, prefix="/api")
     app.include_router(dashboard_router, prefix="/api")
     app.include_router(billing_router, prefix="/api")
+    app.include_router(inbound_email_router, prefix="/api")
 
     # Serve Vite build output
     frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
