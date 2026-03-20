@@ -117,7 +117,7 @@ export function BillingSection({ currentUser }) {
             <div className="billing-summary">
                 <div className="billing-row">
                     <span className="billing-label">Plan</span>
-                    <span className="billing-value">{billing.tier === 'paid' ? 'Pro' : 'Free'} - {billing.seat_count} seat{billing.seat_count !== 1 ? 's' : ''}</span>
+                    <span className="billing-value">{billing.tier === 'paid' ? 'Pro' : 'Free'} - {billing.seat_count} seat{billing.seat_count !== 1 ? 's' : ''} @ $24.99/seat/mo</span>
                 </div>
                 {billing.subscription_status && (
                     <div className="billing-row">
@@ -202,6 +202,29 @@ export function BillingSection({ currentUser }) {
                         <p className="billing-addon-desc">
                             Receive automated daily operations reports every morning. TrueCore.cloud compiles new issues, scheduled vendor visits,
                             and items flagged as important — then emails a summary to all site supervisors.
+                        </p>
+                    </div>
+
+                    <div className="billing-addon">
+                        <div className="billing-addon-header">
+                            <div className="billing-addon-info">
+                                <span className="billing-addon-name">Receive Tickets on Email</span>
+                                <span className="billing-addon-price">$24.99/mo</span>
+                            </div>
+                            <label className="billing-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={billing.inbound_email_addon}
+                                    disabled={toggling === 'inbound_email'}
+                                    onChange={e => handleToggleAddon('inbound_email', e.target.checked)}
+                                />
+                                <span className="billing-toggle-slider" />
+                            </label>
+                        </div>
+                        <p className="billing-addon-desc">
+                            External users can email {billing.slug}@tickets.truecore.cloud to automatically create tickets.
+                            AI extracts all relevant fields, creates the ticket, and sends a confirmation back to the sender.
+                            Control who can submit tickets via the sender whitelist.
                         </p>
                     </div>
                 </div>

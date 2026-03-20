@@ -2,7 +2,7 @@
 
 An AI-powered database assistant for IT site operations. MileCore lets support teams manage assets, people, requests, events, inventory, and more through natural language conversation — it translates plain English into database actions automatically.
 
-Built with **FastAPI** + **SQLite** on the backend and **React** + **Vite** on the frontend, powered by **Claude** (Anthropic).
+Built with **FastAPI** + **PostgreSQL** on the backend and **React** + **Vite** on the frontend, powered by **Claude** (Anthropic).
 
 ## Features
 
@@ -24,7 +24,7 @@ Built with **FastAPI** + **SQLite** on the backend and **React** + **Vite** on t
 |-------|-----------|
 | Backend | Python 3.11+, FastAPI, Uvicorn |
 | AI | Anthropic Claude API (claude-sonnet-4-6 default) |
-| Database | SQLite (WAL mode, foreign keys enabled) |
+| Database | PostgreSQL (connection pooling, Row-Level Security) |
 | Frontend | React 18, Vite, Recharts, react-markdown |
 | Email | Brevo (Sendinblue) SMTP |
 
@@ -37,7 +37,7 @@ Built with **FastAPI** + **SQLite** on the backend and **React** + **Vite** on t
 ```
 milebot/
 ├── run.py                     # Entry point — DB init, frontend build, server start
-├── schema.sql                 # Full database schema (25+ tables, triggers)
+├── schema_pg.sql              # Full PostgreSQL database schema (25+ tables, triggers)
 ├── initial_seed.py            # Bootstrap: default company, site, teams, 2 users
 ├── requirements.txt           # Python dependencies
 ├── .env                       # Configuration (not committed)
@@ -45,7 +45,7 @@ milebot/
 ├── backend/
 │   ├── app.py                 # FastAPI app factory, CORS, static files, lifespan
 │   ├── config.py              # Loads .env — API key, DB path, email config
-│   ├── database.py            # SQLite connection, execute/validate, reset/migrate
+│   ├── database.py            # PostgreSQL connection pooling, execute/validate, reset/migrate
 │   ├── claude_client.py       # Claude integration — streaming, tool execution loop
 │   ├── prompts.py             # System prompt template + 7 tool definitions
 │   ├── sessions.py            # Chat session CRUD (UUID-based)
@@ -120,8 +120,8 @@ ANTHROPIC_API_KEY_SPARE=sk-ant-...
 # Optional — Claude model (default: claude-sonnet-4-6)
 CLAUDE_MODEL=claude-sonnet-4-6
 
-# Optional — Database path (default: milecore.db)
-DATABASE_PATH=milecore.db
+# Optional — PostgreSQL connection (default: postgresql://truecore:truecore@localhost:5432/truecore)
+DATABASE_URL=postgresql://truecore:truecore@localhost:5432/truecore
 
 # Optional — Email (Brevo SMTP)
 BREVO_SMTP_HOST=smtp-relay.brevo.com
@@ -143,8 +143,8 @@ python run.py
 ```
 
 This will:
-1. Initialize the SQLite database from `schema.sql` (or migrate if it already exists)
-2. Seed the default company, site, teams, and two demo users (Dan = admin, Bob = user)
+1. Connect to PostgreSQL and initialize the schema from `schema_pg.sql`
+2. Seed the default instance, company, site, teams, and two demo users (Dan = admin, Bob = user)
 3. Install frontend npm dependencies (if needed) and build with Vite
 4. Start the Uvicorn server on `http://localhost:8000`
 
@@ -187,7 +187,7 @@ All table definitions use `CREATE TABLE IF NOT EXISTS` for safe re-initializatio
 
 ### Persistence
 
-The database file (`milecore.db`) persists across restarts. On startup, `run.py` applies the schema idempotently — existing data is preserved.
+PostgreSQL stores all data persistently. On startup, `run.py` applies the schema idempotently — existing data is preserved.
 
 ## AI Tools
 

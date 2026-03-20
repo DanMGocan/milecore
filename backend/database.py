@@ -1,28 +1,18 @@
 """PostgreSQL database layer using psycopg v3 with connection pooling.
 
-Replaces the previous SQLite-based implementation. All tenant-scoped functions
-accept an ``instance_id`` parameter that sets a PostgreSQL session variable
-(``app.current_instance_id``) so that Row-Level Security policies can filter
-rows automatically.
+All tenant-scoped functions accept an ``instance_id`` parameter that sets a
+PostgreSQL session variable (``app.current_instance_id``) so that Row-Level
+Security policies can filter rows automatically.
 """
 
 from __future__ import annotations
 
 import re
-import threading
 from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-
-# ---------------------------------------------------------------------------
-# Backward-compatibility shim: other modules import ``_lock`` and use it with
-# ``with _lock:``.  The connection pool handles concurrency so the lock is a
-# no-op, but keeping it avoids import errors in files such as dashboard.py,
-# sessions.py, daily_report.py and initial_seed.py.
-# ---------------------------------------------------------------------------
-_lock = threading.Lock()
 
 # Global tables that are NOT tenant-scoped (excluded from schema DDL, table
 # listings, and the reset operation).
@@ -112,11 +102,10 @@ def _set_instance(conn: psycopg.Connection, instance_id: int | None) -> None:
 
 
 def _translate_placeholders(sql: str) -> str:
-    """Replace SQLite-style ``?`` placeholders with ``%s`` for psycopg.
+    """Replace ``?`` placeholders with ``%s`` for psycopg.
 
     Only bare ``?`` tokens are replaced — occurrences inside string literals
-    or identifiers are left alone.  This provides backward compatibility for
-    the dozens of call-sites that still pass ``?`` parameters.
+    or identifiers are left alone.
     """
     # Fast path: nothing to translate
     if "?" not in sql:
@@ -555,7 +544,22 @@ def init_db(schema_path: str) -> None:
         conn.execute("CREATE SCHEMA public")
         conn.commit()
 
-        statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
+        # Split on semicolons but respect $$-quoted blocks (e.g. trigger functions)
+        statements = []
+        current = []
+        in_dollar_quote = False
+        for line in schema_sql.splitlines():
+            stripped = line.strip()
+            # Track $$ delimiters
+            count = stripped.count('$$')
+            if count % 2 == 1:
+                in_dollar_quote = not in_dollar_quote
+            current.append(line)
+            if not in_dollar_quote and stripped.endswith(';'):
+                stmt = '\n'.join(current).strip()
+                if stmt:
+                    statements.append(stmt)
+                current = []
         for stmt in statements:
             conn.execute(stmt)
         conn.commit()
@@ -608,10 +612,4 @@ def reset_instance(instance_id: int) -> None:
         conn.commit()
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility alias
-# ---------------------------------------------------------------------------
-# ``reset_db`` was imported by dashboard.py.  Point it at ``reset_instance``
-# so existing call-sites do not break (they will need to start passing
-# ``instance_id`` eventually).
 reset_db = reset_instance

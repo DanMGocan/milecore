@@ -1,5 +1,5 @@
 -- TrueCore.cloud Multi-Tenant SaaS — PostgreSQL Schema
--- Converted from MileCore SQLite schema
+-- Multi-tenant PostgreSQL schema
 -- All tenant-scoped tables include instance_id with RLS enforcement
 
 -- ============================================================

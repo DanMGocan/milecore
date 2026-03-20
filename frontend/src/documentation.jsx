@@ -112,7 +112,7 @@ function OverviewSection() {
             </p>
             <h3>Tech Stack</h3>
             <ul>
-                <li><strong>Backend:</strong> Python with FastAPI, SQLite database</li>
+                <li><strong>Backend:</strong> Python with FastAPI, PostgreSQL database</li>
                 <li><strong>AI:</strong> Anthropic Claude via streaming API</li>
                 <li><strong>Frontend:</strong> React (Vite), Recharts for dashboard visualizations</li>
                 <li><strong>Email:</strong> Brevo SMTP relay</li>
@@ -205,7 +205,7 @@ function FeaturesSection() {
             <ul>
                 <li>Generate downloadable Excel files from any query through chat</li>
                 <li>Export the entire database to a single .xlsx file with one sheet per table</li>
-                <li>Download the raw SQLite .db file</li>
+                <li>Export the entire database to a downloadable Excel file</li>
             </ul>
 
             <h3>Approval System</h3>
@@ -518,7 +518,7 @@ function DatabaseBrowserSection() {
 
             <h3>Export & Download</h3>
             <ul>
-                <li><strong>Download DB:</strong> Downloads the raw SQLite <span className="doc-code">.db</span> file</li>
+                <li><strong>Export Excel:</strong> Exports all tables to a downloadable <span className="doc-code">.xlsx</span> file</li>
                 <li><strong>Export Excel:</strong> Exports all tables to a single <span className="doc-code">.xlsx</span> file with one sheet per table</li>
             </ul>
         </section>
@@ -556,8 +556,7 @@ function DashboardSection() {
             <p>A management panel at the bottom provides:</p>
             <ul>
                 <li><strong>Export to Excel</strong> &mdash; download all data as <span className="doc-code">.xlsx</span></li>
-                <li><strong>Import Merge</strong> &mdash; upload an Excel or <span className="doc-code">.db</span> file to merge data into existing tables</li>
-                <li><strong>Download DB</strong> &mdash; download the raw SQLite database file</li>
+                <li><strong>Import Merge</strong> &mdash; upload an Excel file to merge data into existing tables</li>
             </ul>
 
             <h3>Admin Actions</h3>
@@ -866,7 +865,7 @@ function SchemaSection() {
         <section id="schema" className="doc-section">
             <h2>Database Schema</h2>
             <p>
-                TrueCore.cloud uses a SQLite database with 30+ tables organized by domain. All write operations are automatically logged to the <span className="doc-code">audit_log</span> table. Below is a reference of every table grouped by function.
+                TrueCore.cloud uses a PostgreSQL database with 30+ tables organized by domain. All write operations are automatically logged to the <span className="doc-code">audit_log</span> table. Below is a reference of every table grouped by function.
             </p>
             {groups.map(g => (
                 <div key={g.title}>
@@ -1119,9 +1118,9 @@ function QATestingSection() {
                 <thead><tr><th>Test Case</th><th>Steps</th><th>Expected Result</th></tr></thead>
                 <tbody>
                     <tr>
-                        <td>Download .db file</td>
-                        <td>Click "Download DB" on the Dashboard or Database page</td>
-                        <td>Browser downloads a valid <span className="doc-code">.db</span> SQLite file</td>
+                        <td>Export to Excel</td>
+                        <td>Click "Export to Excel" on the Dashboard or Database page</td>
+                        <td>Browser downloads a valid <span className="doc-code">.xlsx</span> file with all tables</td>
                     </tr>
                     <tr>
                         <td>Export to Excel</td>
@@ -1342,7 +1341,7 @@ function CostEstimateSection() {
                 <strong style={{ color: '#8b0000' }}>Model Recommendation:</strong> TrueCore.cloud has been tested with both Sonnet and Opus models. Although Sonnet is 5 times cheaper than Opus, the performance has been very similar, so the recommendation is to run TrueCore.cloud with the Sonnet 4.6 model for decreased costs and the same performance. No testing has been done with OpenAI LLMs.
             </div>
             <p>
-                TrueCore.cloud runs on a single AWS EC2 instance with a SQLite database and uses the Claude API for its AI assistant. The Claude API is the dominant cost driver, accounting for 85–97% of total monthly spend depending on usage volume.
+                TrueCore.cloud runs on a single AWS EC2 instance with a PostgreSQL database and uses the Claude API for its AI assistant. The Claude API is the dominant cost driver, accounting for 85–97% of total monthly spend depending on usage volume.
             </p>
 
             <h3>Claude API Cost Analysis</h3>
@@ -1421,7 +1420,7 @@ function CostEstimateSection() {
             </table>
 
             <h3>AWS EC2 Costs</h3>
-            <p>TrueCore.cloud runs on a single EC2 instance. SQLite eliminates the need for a separate database server.</p>
+            <p>TrueCore.cloud runs on a single EC2 instance with PostgreSQL running on the same host.</p>
 
             <h4>Instance Sizing</h4>
             <table className="doc-table">
@@ -1469,7 +1468,7 @@ function CostEstimateSection() {
                     <tr><td>Domain registration</td><td>~$1.00</td><td>Amortized from ~$12/year</td></tr>
                     <tr><td>SSL/TLS certificate</td><td>$0.00</td><td>Let's Encrypt (free, auto-renewing)</td></tr>
                     <tr><td>Brevo SMTP</td><td>$0.00</td><td>Free tier: 300 emails/day</td></tr>
-                    <tr><td>S3 backups</td><td>$0.50–$2.00</td><td>Daily SQLite DB snapshots (&lt;100 MB)</td></tr>
+                    <tr><td>S3 backups</td><td>$0.50–$2.00</td><td>Daily PostgreSQL backups (&lt;100 MB)</td></tr>
                     <tr><td>Route 53 DNS</td><td>$0.50</td><td>$0.50/hosted zone + negligible query costs</td></tr>
                 </tbody>
             </table>
@@ -1549,7 +1548,7 @@ function CostEstimateSection() {
                     <li><strong>Prompt caching saves ~90% on system prompt reads.</strong> The system prompt is cached with a 5-minute TTL. At Sonnet rates, this saves ~$0.014 per message vs. uncached reads (~$139/month saved at medium tier).</li>
                     <li><strong>The agentic loop amplifies costs.</strong> Each tool call triggers another full API round-trip. A simple query costs ~$0.052, but a complex multi-step operation (3–4 tool calls) could cost $0.10–$0.15.</li>
                     <li><strong>No scheduled API costs.</strong> Daily reports use direct SQL + Brevo SMTP — they do not call the Claude API.</li>
-                    <li><strong>SQLite eliminates database costs.</strong> No RDS or managed database service needed.</li>
+                    <li><strong>PostgreSQL runs locally on the same instance.</strong> No RDS or managed database service needed.</li>
                     <li><strong>Email is effectively free.</strong> Brevo's free tier (300 emails/day) covers daily reports and ad-hoc sends with significant headroom.</li>
                 </ul>
             </div>

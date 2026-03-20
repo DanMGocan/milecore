@@ -11,9 +11,6 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://truecore:truecore@localhost:5432/truecore")
 SCHEMA_PATH = os.getenv("SCHEMA_PATH", "schema_pg.sql")
 
-# Legacy (kept for backward compatibility during migration)
-DATABASE_PATH = os.getenv("DATABASE_PATH", "milecore.db")
-
 # JWT Authentication
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
