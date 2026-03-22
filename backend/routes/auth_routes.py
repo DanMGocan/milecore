@@ -221,11 +221,13 @@ async def me(user: AuthUser = Depends(get_current_user)):
     instances = instances_result.get("rows", [])
 
     return {
-        "id": user_row["id"],
-        "email": user_row["email"],
-        "display_name": user_row["display_name"],
-        "email_verified": user_row["email_verified"],
-        "created_at": str(user_row["created_at"]) if user_row.get("created_at") else None,
+        "user": {
+            "id": user_row["id"],
+            "email": user_row["email"],
+            "display_name": user_row["display_name"],
+            "email_verified": user_row["email_verified"],
+            "created_at": str(user_row["created_at"]) if user_row.get("created_at") else None,
+        },
         "instances": instances,
     }
 

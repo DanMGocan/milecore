@@ -1,11 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal } from './components';
-
-const PERSONAL_DOMAINS = [
-    'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com',
-    'protonmail.com', 'proton.me', 'aol.com', 'mail.com', 'zoho.com',
-    'yandex.com', 'gmx.com', 'live.com'
-];
 
 /* --- SVG Icons for feature slides --- */
 function ChatIcon() {
@@ -143,10 +136,6 @@ export function LandingPage({ onNavigate }) {
     const [headerSolid, setHeaderSolid] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [currentSlide, setCurrentSlide] = useState(0);
-    const [demoModal, setDemoModal] = useState(false);
-    const [formData, setFormData] = useState({ name: '', email: '', title: '', team: '' });
-    const [formError, setFormError] = useState('');
-    const [formSuccess, setFormSuccess] = useState(false);
     const [paused, setPaused] = useState(false);
     const touchStart = useRef(null);
 
@@ -183,18 +172,6 @@ export function LandingPage({ onNavigate }) {
 
     const scrollTo = (id) => { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); setMenuOpen(false); };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        setFormError('');
-        if (!formData.name || !formData.email || !formData.title || !formData.team) { setFormError('All fields are required.'); return; }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) { setFormError('Please enter a valid email address.'); return; }
-        const domain = formData.email.split('@')[1]?.toLowerCase();
-        if (PERSONAL_DOMAINS.includes(domain)) { setFormError('Please use your company email.'); return; }
-        setFormSuccess(true);
-    };
-
-    const resetForm = () => { setFormData({ name: '', email: '', title: '', team: '' }); setFormError(''); setFormSuccess(false); setDemoModal(false); };
-
     const SlideIcon = FEATURES[currentSlide].Icon;
 
     return (
@@ -212,7 +189,7 @@ export function LandingPage({ onNavigate }) {
                         <button onClick={() => scrollTo('features')}>Features</button>
                         <button onClick={() => scrollTo('about')}>About</button>
                         <button onClick={() => { onNavigate('chat'); setMenuOpen(false); }}>Go to App</button>
-                        <button className="landing-cta-sm" onClick={() => { setDemoModal(true); setMenuOpen(false); }}>Request a Demo</button>
+                        <button className="landing-cta-sm" onClick={() => { onNavigate('login'); setMenuOpen(false); }}>Get Started</button>
                     </nav>
                 </div>
             </header>
@@ -223,7 +200,7 @@ export function LandingPage({ onNavigate }) {
                 <h1>AI but with <span className="landing-gradient-text">no fluff.</span></h1>
                 <p>It's simple, that's why it simply works.</p>
                 <div className="landing-hero-actions">
-                    <button className="landing-cta" onClick={() => setDemoModal(true)}>Request a Demo</button>
+                    <button className="landing-cta" onClick={() => onNavigate('login')}>Get Started</button>
                     <button className="landing-cta-outline" onClick={() => onNavigate('chat')}>Try the App</button>
                 </div>
                 <div className="landing-scroll-indicator" aria-hidden="true"><span /><span /></div>
@@ -315,50 +292,13 @@ export function LandingPage({ onNavigate }) {
                 <div className="landing-final-cta-glow" aria-hidden="true" />
                 <h2>Ready to see it in action?</h2>
                 <p>Get a personalized walkthrough of TrueCore.cloud for your team.</p>
-                <button className="landing-cta" onClick={() => setDemoModal(true)}>Request a Demo</button>
+                <button className="landing-cta" onClick={() => onNavigate('login')}>Get Started</button>
             </section>
 
             <footer className="landing-footer">
                 <p>&copy; {new Date().getFullYear()} TrueCore.cloud. All rights reserved.</p>
             </footer>
 
-            <Modal open={demoModal} onClose={resetForm} title="Request a Demo" className="landing-modal">
-                {formSuccess ? (
-                    <div className="landing-form-success">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
-                        </svg>
-                        <p>Thank you, we'll be in touch.</p>
-                        <div className="modal-actions">
-                            <button className="btn landing-btn-primary" onClick={resetForm}>Close</button>
-                        </div>
-                    </div>
-                ) : (
-                    <form onSubmit={handleSubmit} noValidate>
-                        <div className="form-group">
-                            <label htmlFor="demo-name">Name</label>
-                            <input id="demo-name" className="form-input landing-input" type="text" required value={formData.name} onChange={e => setFormData(d => ({ ...d, name: e.target.value }))} />
-                        </div>
-                        <div className="form-group">
-                            <label htmlFor="demo-email">Email</label>
-                            <input id="demo-email" className="form-input landing-input" type="email" required value={formData.email} onChange={e => setFormData(d => ({ ...d, email: e.target.value }))} />
-                        </div>
-                        <div className="form-group">
-                            <label htmlFor="demo-title">Title</label>
-                            <input id="demo-title" className="form-input landing-input" type="text" required value={formData.title} onChange={e => setFormData(d => ({ ...d, title: e.target.value }))} />
-                        </div>
-                        <div className="form-group">
-                            <label htmlFor="demo-team">Team</label>
-                            <input id="demo-team" className="form-input landing-input" type="text" required value={formData.team} onChange={e => setFormData(d => ({ ...d, team: e.target.value }))} />
-                        </div>
-                        {formError && <p className="landing-form-error" role="alert">{formError}</p>}
-                        <div className="modal-actions">
-                            <button type="button" className="btn landing-btn" onClick={resetForm}>Cancel</button>
-                            <button type="submit" className="btn landing-btn-primary">Submit</button>
-                        </div>
-                    </form>
-                )}
-            </Modal>
         </div>
     );
 }

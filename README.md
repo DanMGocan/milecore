@@ -1,6 +1,6 @@
 # MileCore
 
-An AI-powered database assistant for IT site operations. MileCore lets support teams manage assets, people, requests, events, inventory, and more through natural language conversation — it translates plain English into database actions automatically.
+An AI-powered database assistant for IT site operations. MileCore lets support teams manage assets, people, tickets, events, inventory, and more through natural language conversation — it translates plain English into database actions automatically.
 
 Built with **FastAPI** + **PostgreSQL** on the backend and **React** + **Vite** on the frontend, powered by **Claude** (Anthropic).
 
@@ -11,8 +11,8 @@ Built with **FastAPI** + **PostgreSQL** on the backend and **React** + **Vite** 
 - **CSV/XLSX Import** — Upload files through the chat. The AI previews the data, maps columns to the right tables, and bulk-inserts.
 - **Query Approval System** — Admins define rules for which write operations need approval. Matching queries are queued for review instead of executing immediately.
 - **Email Integration** — Send work-related emails directly from the chat (via Brevo SMTP). The AI looks up recipients in the people table.
-- **Database Browser** — Full CRUD UI for all tables: view schemas, browse rows, insert/delete, create/drop tables, add columns, export to XLSX, import from XLSX or `.db` files.
-- **Dashboard** — KPI cards and charts (assets, requests, issues, staffing, events). Admin controls for seeding demo data, resetting the database, and triggering daily reports.
+- **Database Browser** — Full CRUD UI for all tables: view schemas, browse rows, insert/delete, create tables, add columns, export to XLSX, import from XLSX.
+- **Dashboard** — KPI cards and charts (assets, tickets, issues, staffing, events). Admin controls for resetting the database and triggering daily reports.
 - **Daily Reports** — Automated email reports sent to supervisors each morning with new issues, vendor visits, and flagged items.
 - **Chat Persistence** — Conversations are saved per user and can be resumed from the sidebar.
 - **Audit Logging** — Every INSERT, UPDATE, and DELETE is automatically recorded in the `audit_log` table.
@@ -59,7 +59,7 @@ milebot/
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx            # Layout, routing, demo modal, user switching
+│   │   ├── App.jsx            # Layout, routing, user switching
 │   │   ├── chat.jsx           # Chat UI, SSE streaming, file upload, sessions
 │   │   ├── browser.jsx        # Database browser — tables, rows, schema
 │   │   ├── dashboard.jsx      # KPI cards, charts, admin actions
@@ -71,18 +71,6 @@ milebot/
 │   ├── index.html
 │   ├── vite.config.js         # Dev proxy to :8000, manual chunks
 │   └── package.json
-│
-└── dummy_files/               # Sample data for demo seeding
-    ├── demo_full_import.xlsx  # All tables in one workbook (one-click load)
-    ├── companies.csv
-    ├── sites.csv
-    ├── rooms.csv
-    ├── people.csv
-    ├── assets.csv
-    ├── requests.csv
-    ├── technical_issues.csv
-    ├── events.csv
-    └── inventory_items.csv
 ```
 
 ## Getting Started
@@ -144,7 +132,7 @@ python run.py
 
 This will:
 1. Connect to PostgreSQL and initialize the schema from `schema_pg.sql`
-2. Seed the default instance, company, site, teams, and two demo users (Dan = admin, Bob = user)
+2. Seed the default instance, company, site, teams, and the default users
 3. Install frontend npm dependencies (if needed) and build with Vite
 4. Start the Uvicorn server on `http://localhost:8000`
 
@@ -170,7 +158,7 @@ The database has 25+ tables organized into logical groups:
 - **Organizations** — `companies`, `sites`, `rooms`
 - **People & Teams** — `people`, `teams`, `pto`
 - **Assets** — `assets`, `asset_relationships`
-- **Support** — `requests`, `technical_issues`, `issue_occurrences`
+- **Support** — `tickets`, `technical_issues`, `issue_occurrences`
 - **Events** — `events`, `event_participants`, `event_assets`
 - **Notes & Work** — `notes`, `work_logs`
 - **Inventory** — `inventory_items`, `inventory_stock`, `inventory_transactions`
@@ -182,8 +170,7 @@ All table definitions use `CREATE TABLE IF NOT EXISTS` for safe re-initializatio
 
 ### Reset & Seed
 
-- **Reset**: Dashboard > "Reset Database" button — drops all tables, recreates schema, re-seeds the two default users.
-- **Seed Demo Data**: Demo modal > "click here" — loads `dummy_files/demo_full_import.xlsx` (~80 rows across 9 tables: companies, sites, rooms, people, assets, requests, issues, events, inventory).
+- **Reset**: Dashboard > "Reset Database" button — deletes all tenant-scoped data for the current instance.
 
 ### Persistence
 
@@ -191,7 +178,7 @@ PostgreSQL stores all data persistently. On startup, `run.py` applies the schema
 
 ## AI Tools
 
-The Claude assistant has access to 7 tools:
+The Claude assistant has access to 9 tools:
 
 | Tool | Description |
 |------|-------------|
@@ -202,6 +189,8 @@ The Claude assistant has access to 7 tools:
 | `manage_approval_rules` | Add, list, or remove approval rules (admin only) |
 | `submit_for_approval` | Queue a query for admin review |
 | `review_approvals` | List, approve, or reject pending queries (admin only) |
+| `generate_excel` | Generate downloadable .xlsx files from query results |
+| `invite_user` | Invite someone to join the instance (owner only) |
 
 The AI receives the full database schema, current user context, home site info, and active approval rules in its system prompt. Prompt caching is used to reduce API costs.
 
@@ -223,43 +212,29 @@ The AI receives the full database schema, current user context, home site info, 
 |--------|------|-------------|
 | GET | `/api/tables` | List all tables |
 | POST | `/api/tables` | Create table |
-| DELETE | `/api/tables/:name` | Drop table |
 | GET | `/api/tables/:name/schema` | Column metadata |
 | GET | `/api/tables/:name/rows` | Paginated rows |
 | POST | `/api/tables/:name/rows` | Insert row |
 | DELETE | `/api/tables/:name/rows/:id` | Delete row |
 | POST | `/api/tables/:name/columns` | Add column |
 | GET | `/api/tables/export` | Export all tables to XLSX |
-| GET | `/api/tables/download` | Download raw .db file |
 | POST | `/api/tables/import` | Import XLSX (replace) |
-| POST | `/api/tables/import-merge` | Import XLSX/DB (merge) |
+| POST | `/api/tables/import-merge` | Import XLSX (merge) |
 
 ### Dashboard
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/dashboard/overview` | KPI summary |
 | GET | `/api/dashboard/assets-by-period` | Assets created by date |
-| GET | `/api/dashboard/issues-summary` | Request/issue breakdown |
+| GET | `/api/dashboard/issues-summary` | Ticket/issue breakdown |
 | GET | `/api/dashboard/vendor-visits` | Vendor visit stats |
 | GET | `/api/dashboard/staff-per-site` | Headcount by site |
-| POST | `/api/dashboard/seed-demo` | Load demo data from XLSX |
 | POST | `/api/dashboard/reset-database` | Drop and reinitialize DB |
 
 ### Upload
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/upload/stage` | Stage CSV for AI import |
-
-## Demo Users
-
-The app ships with two hardcoded demo users (no authentication):
-
-| User | Role | Person ID | Job Title |
-|------|------|-----------|-----------|
-| Dan Gocan | Admin | 1 | IT Technician |
-| Bob User | User | 2 | AV Technician |
-
-Switch between them using the button in the chat sidebar. The admin user sees the pending approvals badge and has access to approval management tools.
 
 ## Credits
 

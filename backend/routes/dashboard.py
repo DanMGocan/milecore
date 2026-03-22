@@ -1,6 +1,3 @@
-import os
-import re
-
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
@@ -10,8 +7,6 @@ from backend.config import APP_URL, SCHEMA_PATH
 from backend.email_sender import send_email
 from backend.database import execute_query, reset_instance
 from initial_seed import seed_initial_data
-
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 router = APIRouter(prefix="/dashboard")
 
@@ -37,20 +32,22 @@ async def overview(ctx: InstanceContext = Depends(get_current_instance)):
     row = _query(
         "SELECT "
         "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'active' AND instance_id = ?) AS active_assets, "
-        "(SELECT COUNT(*) FROM requests WHERE status IN ('open', 'in_progress') AND instance_id = ?) AS open_requests, "
+        "(SELECT COUNT(*) FROM tickets WHERE status IN ('open', 'in_progress') AND instance_id = ?) AS open_tickets, "
         "(SELECT COUNT(*) FROM technical_issues WHERE resolution IS NULL AND instance_id = ?) AS open_issues, "
         "(SELECT COUNT(*) FROM events WHERE DATE(start_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', '+7 days') AND instance_id = ?) AS events_this_week, "
         "(SELECT COUNT(*) FROM technical_issues WHERE important=1 AND instance_id = ?) + "
-        "(SELECT COUNT(*) FROM requests WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM tickets WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM events WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM notes WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM changes WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM work_logs WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM assets WHERE important=1 AND instance_id = ?) + "
-        "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1 AND instance_id = ?) AS important_items",
+        "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1 AND instance_id = ?) + "
+        "(SELECT COUNT(*) FROM projects WHERE important=1 AND instance_id = ?) AS important_items",
         [ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
          ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
-         ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id],
+         ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
+         ctx.instance_id],
         instance_id=ctx.instance_id,
     )[0]
     push = _query(
@@ -114,7 +111,7 @@ async def assets_by_period(ctx: InstanceContext = Depends(get_current_instance))
 @router.get("/issues-summary")
 async def issues_summary(ctx: InstanceContext = Depends(get_current_instance)):
     by_status = _query(
-        "SELECT status, COUNT(*) as count FROM requests WHERE instance_id = ? GROUP BY status ORDER BY count DESC",
+        "SELECT status, COUNT(*) as count FROM tickets WHERE instance_id = ? GROUP BY status ORDER BY count DESC",
         [ctx.instance_id],
         instance_id=ctx.instance_id,
     )
@@ -152,69 +149,6 @@ async def staff_per_site(ctx: InstanceContext = Depends(get_current_instance)):
     return {"data": data}
 
 
-@router.post("/seed-demo")
-async def seed_demo(ctx: InstanceContext = Depends(get_current_instance)):
-    """Seed the database with demo data from the xlsx file."""
-    import openpyxl
-
-    xlsx_path = os.path.join(_PROJECT_ROOT, "dummy_files", "demo_full_import.xlsx")
-    if not os.path.exists(xlsx_path):
-        return {"ok": False, "error": "Demo data file not found"}
-
-    # Check if demo data has already been seeded (initial seed only has 1 company)
-    result = execute_query(
-        "SELECT COUNT(*) as cnt FROM companies WHERE instance_id = ?",
-        [ctx.instance_id],
-        instance_id=ctx.instance_id,
-    )
-    count = result["rows"][0]["cnt"] if result.get("rows") else 0
-    if count > 1:
-        return {"ok": False, "already_seeded": True,
-                "error": "The database already contains demo data. Please reset the database from the Dashboard page first."}
-
-    try:
-        wb = openpyxl.load_workbook(xlsx_path)
-
-        # Insert order respects FK constraints
-        sheet_order = [
-            "companies", "sites", "rooms", "people", "assets",
-            "requests", "technical_issues", "events", "inventory_items",
-        ]
-
-        total_inserted = 0
-
-        for table_name in sheet_order:
-            if table_name not in wb.sheetnames:
-                continue
-            ws = wb[table_name]
-            headers = [cell.value for cell in ws[1]]
-            if not headers:
-                continue
-            if not all(isinstance(h, str) and re.match(r"^\w+$", h) for h in headers):
-                continue
-
-            # Add instance_id to the columns
-            cols = ", ".join(headers) + ", instance_id"
-            placeholders = ", ".join(["?"] * len(headers)) + ", ?"
-
-            for row_idx in range(2, ws.max_row + 1):
-                values = [cell.value for cell in ws[row_idx]]
-                values.append(ctx.instance_id)
-                execute_query(
-                    f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})",
-                    values,
-                    instance_id=ctx.instance_id,
-                )
-                total_inserted += 1
-
-        clear_schema_cache()
-        clear_prompt_cache()
-
-        return {"ok": True, "total_inserted": total_inserted}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
 @router.post("/reset-database")
 async def reset_database(ctx: InstanceContext = Depends(get_current_instance)):
     try:
@@ -232,7 +166,7 @@ async def reset_database(ctx: InstanceContext = Depends(get_current_instance)):
 @router.get("/users")
 async def list_users(ctx: InstanceContext = Depends(get_current_instance)):
     users = _query(
-        "SELECT id, first_name, last_name, email, username, user_role, role_title, status "
+        "SELECT id, first_name, last_name, email, username, user_role, role_title, status, motto "
         "FROM people WHERE is_user = 1 AND instance_id = ? ORDER BY id",
         [ctx.instance_id],
         instance_id=ctx.instance_id,
@@ -369,6 +303,27 @@ async def change_user_role(person_id: int, req: ChangeRoleRequest, ctx: Instance
     execute_query(
         "UPDATE people SET user_role = ? WHERE id = ? AND instance_id = ?",
         [req.new_role, person_id, ctx.instance_id],
+        instance_id=ctx.instance_id,
+    )
+
+    return {"ok": True}
+
+
+class UpdateMottoRequest(BaseModel):
+    motto: str
+    requesting_person_id: int
+
+
+@router.patch("/users/{person_id}/motto")
+async def update_motto(person_id: int, req: UpdateMottoRequest, ctx: InstanceContext = Depends(get_current_instance)):
+    if req.requesting_person_id != person_id:
+        return {"error": "You can only update your own motto"}
+
+    motto = req.motto.strip()[:200]
+
+    execute_query(
+        "UPDATE people SET motto = ? WHERE id = ? AND instance_id = ?",
+        [motto, person_id, ctx.instance_id],
         instance_id=ctx.instance_id,
     )
 

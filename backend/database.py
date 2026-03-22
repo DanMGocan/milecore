@@ -21,9 +21,51 @@ _GLOBAL_TABLES = frozenset({
     "instances",
     "instance_memberships",
     "instance_invitations",
-    "inbound_email_senders",
-    "inbound_emails",
 })
+
+# Tables that must never be dropped/truncated and require WHERE on UPDATE/DELETE.
+_PROTECTED_TABLES = _GLOBAL_TABLES | frozenset({
+    "audit_log",
+    "approval_rules",
+    "pending_approvals",
+    "chat_sessions",
+    "chat_messages",
+    "app_settings",
+})
+
+# SQL patterns that are always blocked through execute_query / validate_query.
+_BLOCKED_SQL_PATTERNS = [
+    re.compile(r"\bDROP\s+(TABLE|SCHEMA|INDEX|VIEW|FUNCTION|TRIGGER)\b", re.IGNORECASE),
+    re.compile(r"\bTRUNCATE\b", re.IGNORECASE),
+    re.compile(r"\bALTER\s+TABLE\s+\w+\s+DROP\b", re.IGNORECASE),
+    re.compile(r"\bALTER\s+TABLE\s+\w+\s+RENAME\b", re.IGNORECASE),
+]
+
+
+def _check_sql_safety(sql: str) -> str | None:
+    """Return an error message if *sql* is blocked, otherwise ``None``."""
+    for pattern in _BLOCKED_SQL_PATTERNS:
+        if pattern.search(sql):
+            return f"Blocked: destructive SQL operation is not allowed ({pattern.pattern})"
+
+    # DELETE / UPDATE on protected tables must have a WHERE clause.
+    sql_stripped = sql.strip()
+    sql_upper = sql_stripped.upper()
+
+    delete_match = re.match(r"DELETE\s+FROM\s+(\w+)", sql_stripped, re.IGNORECASE)
+    if delete_match:
+        table = delete_match.group(1).lower()
+        if table in _PROTECTED_TABLES and "WHERE" not in sql_upper:
+            return f"Blocked: DELETE FROM {table} requires a WHERE clause"
+
+    update_match = re.match(r"UPDATE\s+(\w+)", sql_stripped, re.IGNORECASE)
+    if update_match:
+        table = update_match.group(1).lower()
+        if table in _PROTECTED_TABLES and "WHERE" not in sql_upper:
+            return f"Blocked: UPDATE {table} requires a WHERE clause"
+
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Connection pool
@@ -160,6 +202,8 @@ def execute_query(
     sql: str,
     params: list | None = None,
     instance_id: int | None = None,
+    *,
+    _unsafe: bool = False,
 ) -> dict[str, Any]:
     """Execute a SQL statement and return results as a dict.
 
@@ -181,6 +225,11 @@ def execute_query(
         params: Optional bind parameters.
         instance_id: Tenant id — sets the RLS session variable.
     """
+    if not _unsafe:
+        safety_error = _check_sql_safety(sql)
+        if safety_error:
+            return {"error": safety_error}
+
     pool = _get_pool()
     sql_pg = _translate_placeholders(sql)
     sql_stripped = sql_pg.strip().upper()
@@ -294,6 +343,10 @@ def validate_query(
     ``{"valid": False, "error": "…"}`` on failure.  The database is never
     modified.
     """
+    safety_error = _check_sql_safety(sql)
+    if safety_error:
+        return {"valid": False, "error": safety_error}
+
     pool = _get_pool()
     sql_pg = _translate_placeholders(sql)
 
@@ -574,6 +627,13 @@ def reset_instance(instance_id: int) -> None:
     """
     # Ordered from leaf tables (most dependent) to parent tables.
     tenant_tables = [
+        "reminders",
+        "project_links",
+        "project_expenses",
+        "project_updates",
+        "project_tasks",
+        "project_members",
+        "projects",
         "audit_log",
         "chat_messages",
         "chat_sessions",
@@ -586,7 +646,7 @@ def reset_instance(instance_id: int) -> None:
         "changes",
         "events",
         "technical_issues",
-        "requests",
+        "tickets",
         "assets",
         "inventory_items",
         "rooms",

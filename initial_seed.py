@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bootstrap the default TrueCore.cloud demo company, site, and users."""
+"""Bootstrap the default TrueCore.cloud default company, site, and users."""
 
 import json
 import os
@@ -73,7 +73,7 @@ DEFAULT_USERS = [
 
 
 def seed_initial_data(instance_id: int = 1) -> None:
-    """Ensure the default demo company, site, home site, and users exist for an instance."""
+    """Ensure the default company, site, home site, and users exist for an instance."""
 
     # Insert employer
     emp = execute_query(

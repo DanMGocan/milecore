@@ -537,7 +537,7 @@ export function ChatPage({ currentUser }) {
             </div>
             <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Settings">
                 <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                    This is a demo so unfortunately, the only settings you can do, is set some realistic expectations.
+                    Settings will be available in a future update.
                 </p>
                 <div className="modal-actions">
                     <button className="btn btn-primary" onClick={() => setSettingsOpen(false)}>OK</button>

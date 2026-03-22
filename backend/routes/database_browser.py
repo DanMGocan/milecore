@@ -200,15 +200,6 @@ async def create_table(req: CreateTableRequest, ctx: InstanceContext = Depends(g
     return {"message": f"Table '{name}' created", "sql": sql}
 
 
-@router.delete("/{table_name}")
-async def drop_table(table_name: str, ctx: InstanceContext = Depends(get_current_instance)):
-    name = _validate_name(table_name)
-    result = execute_query(f"DROP TABLE IF EXISTS {name}", instance_id=ctx.instance_id)
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    return {"message": f"Table '{name}' dropped"}
-
-
 # --- Schema operations ---
 
 

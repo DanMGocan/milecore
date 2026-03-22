@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://truecore:truecore@localho
 SCHEMA_PATH = os.getenv("SCHEMA_PATH", "schema_pg.sql")
 
 # JWT Authentication
-JWT_SECRET = os.getenv("JWT_SECRET", "")
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me-in-production")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))

@@ -245,16 +245,7 @@ export function BrowserPage() {
         } catch (err) { alert(err.message); }
     };
 
-    const dropTable = async () => {
-        if (!confirm(`Drop table "${selected}"? This cannot be undone.`)) return;
-        try {
-            const res = await fetch(`/api/tables/${selected}`, { method: 'DELETE' });
-            if (!res.ok) { const d = await res.json(); throw new Error(d.detail); }
-            setSelected(null);
-            setSchema([]); setRows([]); setColumns([]);
-            loadTables();
-        } catch (err) { alert(err.message); }
-    };
+;
 
     useEffect(() => { loadTables(); }, []);
 
@@ -317,7 +308,6 @@ export function BrowserPage() {
                                 <button className="btn btn-sm" onClick={() => setShowInsert(true)}>+ Row</button>
                                 <button className="btn btn-sm" onClick={() => setShowAddCol(true)}>+ Column</button>
                                 <button className="btn btn-sm" onClick={() => loadTable(selected, offset)}>Refresh</button>
-                                <button className="btn btn-sm btn-danger" onClick={dropTable}>Drop</button>
                             </div>
                         </div>
 

@@ -74,10 +74,11 @@ def _vendor_visits_today(site_id: int, instance_id: int = 1) -> list[dict]:
 def _important_since(site_id: int, since: str, instance_id: int = 1) -> list[dict]:
     queries = [
         ("Issue", "SELECT id, title, created_at FROM technical_issues WHERE important=1 AND created_at > ? AND site_id=? AND instance_id=?"),
-        ("Request", "SELECT id, title, opened_at as created_at FROM requests WHERE important=1 AND opened_at > ? AND site_id=? AND instance_id=?"),
+        ("Ticket", "SELECT id, title, opened_at as created_at FROM tickets WHERE important=1 AND opened_at > ? AND site_id=? AND instance_id=?"),
         ("Event", "SELECT id, title, created_at FROM events WHERE important=1 AND created_at > ? AND site_id=? AND instance_id=?"),
         ("Note", "SELECT id, title, created_at FROM notes WHERE important=1 AND created_at > ? AND site_id=? AND instance_id=?"),
         ("Change", "SELECT id, title, created_at FROM changes WHERE important=1 AND created_at > ? AND site_id=? AND instance_id=?"),
+        ("Project", "SELECT id, name as title, created_at FROM projects WHERE important=1 AND created_at > ? AND site_id=? AND instance_id=?"),
     ]
     items = []
     for label, sql in queries:

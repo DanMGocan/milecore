@@ -13,6 +13,7 @@ const TOC = [
     { id: 'user-roles', label: 'User Roles' },
     { id: 'daily-reports', label: 'Daily Reports' },
     { id: 'important-flags', label: 'Important Flags' },
+    { id: 'projects', label: 'Projects' },
     { id: 'knowledge', label: 'Knowledge Management' },
     { id: 'schema', label: 'Database Schema' },
     { id: 'scope', label: 'Scope & Limitations' },
@@ -92,6 +93,7 @@ export function DocumentationPage() {
                 <UserRolesSection />
                 <DailyReportsSection />
                 <ImportantFlagsSection />
+                <ProjectsSection />
                 <KnowledgeSection />
                 <SchemaSection />
                 <ScopeSection />
@@ -122,7 +124,7 @@ function OverviewSection() {
                 TrueCore.cloud boots with a seeded default <strong>home site</strong>: <strong>Dublin HQ</strong>. All operations default to that site unless you explicitly specify another one.
             </p>
             <div className="doc-callout">
-                <strong>Bootstrap seed:</strong> The initial company, home site, and demo users are restored automatically on first launch and after a database reset.
+                <strong>Bootstrap seed:</strong> The initial company, home site, and default users are restored automatically on first launch and after a database reset.
             </div>
             <h3>Core Workflow</h3>
             <p>TrueCore.cloud is organized around the lifecycle of site operations:</p>
@@ -170,6 +172,7 @@ function FeaturesSection() {
                 <li>Notes — freeform notes attached to any entity, including handover and follow-up notes</li>
                 <li>PTO and leave tracking for staff</li>
                 <li>Change management — log infrastructure changes with risk level and scheduling</li>
+                <li>Projects — track multi-step initiatives with tasks, budgets, expenses, and team members</li>
                 <li>Vendor contracts — track vendors, SLAs, and contract expiry dates</li>
                 <li>Sites and rooms — manage locations and physical spaces</li>
                 <li>Tagging — flexible tagging system across all entity types</li>
@@ -226,16 +229,14 @@ function FeaturesSection() {
                 <li>Delete individual rows</li>
                 <li>Create new tables with custom column definitions</li>
                 <li>Add columns to existing tables</li>
-                <li>Drop tables</li>
             </ul>
 
             <h3>Dashboard</h3>
             <ul>
-                <li>Stat cards — active assets, open requests, open issues, events this week, important items</li>
-                <li>Charts — assets over time, issues by severity, requests by status, staff per site, vendor visits</li>
-                <li>Database management — export to Excel, import &amp; merge from .xlsx or .db, download raw database</li>
+                <li>Stat cards — active assets, open tickets, open issues, events this week, important items</li>
+                <li>Charts — assets over time, issues by severity, tickets by status, staff per site, vendor visits</li>
+                <li>Database management — export to Excel, import &amp; merge from .xlsx</li>
                 <li>Admin actions — send daily report, reset database</li>
-                <li>Downloadable demo CSV files for testing</li>
             </ul>
 
             <h3>User System</h3>
@@ -382,6 +383,22 @@ function CapabilitiesSection() {
                 <tbody>
                     <tr><td>Send an email</td><td>"Email John about the scheduled maintenance tomorrow"</td></tr>
                     <tr><td>Notify a group</td><td>"Send the AV team an email about the new projector setup"</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Projects & Budget</h3>
+            <table className="doc-table">
+                <thead><tr><th>Action</th><th>Example Phrase</th></tr></thead>
+                <tbody>
+                    <tr><td>Create a project</td><td>"Create a project called Network Refresh for Dublin HQ with a €10,000 budget"</td></tr>
+                    <tr><td>Add team members</td><td>"Add Sarah as project manager on the Network Refresh"</td></tr>
+                    <tr><td>Break into tasks</td><td>"Add tasks: order switches, run cabling, configure VLANs, test connectivity"</td></tr>
+                    <tr><td>Create sub-tasks</td><td>"Add a sub-task under 'run cabling' for floor 2 wiring"</td></tr>
+                    <tr><td>Log expenses</td><td>"Log an expense of €3,200 for Cisco switches, category hardware"</td></tr>
+                    <tr><td>Check budget</td><td>"What's the budget status on the Network Refresh project?"</td></tr>
+                    <tr><td>Post updates</td><td>"Post an update on Network Refresh: cabling complete on floors 1 and 2"</td></tr>
+                    <tr><td>Link entities</td><td>"Link the Cisco contract to the Network Refresh project"</td></tr>
+                    <tr><td>Query projects</td><td>"Show all active projects" or "What projects is Sarah working on?"</td></tr>
                 </tbody>
             </table>
 
@@ -537,7 +554,7 @@ function DashboardSection() {
             <p>Five cards at the top show key metrics at a glance:</p>
             <ul>
                 <li><strong>Active Assets</strong> &mdash; count of assets with lifecycle_status = 'active'</li>
-                <li><strong>Open Requests</strong> &mdash; requests with status 'open' or 'in_progress'</li>
+                <li><strong>Open Tickets</strong> &mdash; tickets with status 'open' or 'in_progress'</li>
                 <li><strong>Open Issues</strong> &mdash; technical issues not yet resolved</li>
                 <li><strong>Events This Week</strong> &mdash; events scheduled in the current week</li>
                 <li><strong>Important Items</strong> &mdash; total items flagged as important across all tables</li>
@@ -547,7 +564,7 @@ function DashboardSection() {
             <p>Four visualization panels powered by Recharts:</p>
             <ul>
                 <li><strong>Assets by Period</strong> &mdash; assets created per day over the last 30 days (area chart)</li>
-                <li><strong>Issues Summary</strong> &mdash; requests by status and issues by severity (bar charts)</li>
+                <li><strong>Issues Summary</strong> &mdash; tickets by status and issues by severity (bar charts)</li>
                 <li><strong>Vendor Visits</strong> &mdash; vendor visit events grouped by status (bar chart)</li>
                 <li><strong>Staff per Site</strong> &mdash; employee count at each site (bar chart)</li>
             </ul>
@@ -647,11 +664,6 @@ function UserRolesSection() {
                 <li>Cannot trigger admin actions on the Dashboard</li>
             </ul>
 
-            <h3>Demo User Switching</h3>
-            <p>
-                In the demo environment, you can switch between users using the button in the conversation sidebar. This toggles between two pre-configured people (person_id 1 and 2) with different roles, letting you test admin vs. standard user behavior.
-            </p>
-
             <h3>Role Configuration</h3>
             <p>
                 User roles are stored in the <span className="doc-code">people</span> table. A person becomes an app user when <span className="doc-code">is_user = 1</span>, and their role is set via the <span className="doc-code">user_role</span> column (<span className="doc-code">'admin'</span> or <span className="doc-code">'user'</span>).
@@ -711,7 +723,7 @@ function ImportantFlagsSection() {
 
             <h3>Tables with Important Flags</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '12px 0' }}>
-                {['technical_issues', 'requests', 'events', 'notes', 'changes', 'work_logs', 'assets', 'inventory_transactions', 'misc_knowledge', 'workflows'].map(t => (
+                {['technical_issues', 'tickets', 'events', 'notes', 'changes', 'work_logs', 'assets', 'inventory_transactions', 'misc_knowledge', 'workflows', 'projects'].map(t => (
                     <span key={t} className="doc-badge">{t}</span>
                 ))}
             </div>
@@ -719,7 +731,7 @@ function ImportantFlagsSection() {
             <h3>Flagging & Unflagging</h3>
             <p>Use natural language to manage flags:</p>
             <div className="doc-code-block">
-                "Flag request #5 as important"<br />
+                "Flag ticket #5 as important"<br />
                 "Mark the Wi-Fi issue as important"<br />
                 "Unflag asset #12"
             </div>
@@ -730,6 +742,82 @@ function ImportantFlagsSection() {
                 <li><strong>Daily Reports:</strong> Items flagged as important from the previous day are included in the supervisor email</li>
                 <li><strong>Chat Queries:</strong> You can ask "Show all important items" or "What's flagged as important?"</li>
             </ul>
+        </section>
+    );
+}
+
+function ProjectsSection() {
+    return (
+        <section id="projects" className="doc-section">
+            <h2>Projects</h2>
+            <p>
+                TrueCore.cloud includes a general-purpose project tracking system for managing multi-step initiatives like infrastructure rollouts, office moves, hardware refreshes, and process improvements — all through the chat interface.
+            </p>
+
+            <h3>Creating a Project</h3>
+            <p>Tell the AI what you're working on and it creates the project with the right fields:</p>
+            <div className="doc-code-block">
+                "Create a project called Network Refresh for Dublin HQ with a €10,000 budget"<br />
+                "Start a new deployment project for the AV upgrade, high priority, category infrastructure"
+            </div>
+            <p>Projects track:</p>
+            <ul>
+                <li><strong>Status:</strong> planned, active, on_hold, completed, cancelled</li>
+                <li><strong>Priority:</strong> low, medium, high, critical</li>
+                <li><strong>Category:</strong> infrastructure, operations, maintenance, deployment, migration, other</li>
+                <li><strong>Timeline:</strong> planned start/end dates and actual start/end dates</li>
+                <li><strong>Budget:</strong> estimated budget cap and currency (default EUR)</li>
+                <li><strong>Owner:</strong> linked to a person in the system</li>
+                <li><strong>Site:</strong> optionally linked to a specific site</li>
+            </ul>
+
+            <h3>Team Members</h3>
+            <p>Assign people to projects with specific roles:</p>
+            <div className="doc-code-block">
+                "Add Sarah as project manager on the Network Refresh"<br />
+                "Add John and Mike as contributors to the AV upgrade project"
+            </div>
+            <p>Roles: <span className="doc-code">manager</span>, <span className="doc-code">contributor</span>, <span className="doc-code">stakeholder</span>, <span className="doc-code">observer</span>. Each person can only be assigned once per project.</p>
+
+            <h3>Tasks & Sub-Tasks</h3>
+            <p>Break projects into actionable work items. Tasks can be nested for complex breakdowns:</p>
+            <div className="doc-code-block">
+                "Add tasks to Network Refresh: order switches, run cabling, configure VLANs, test connectivity"<br />
+                "Add a sub-task under 'run cabling' for floor 2 wiring"<br />
+                "Mark the 'order switches' task as done"<br />
+                "What tasks are still open on the Network Refresh?"
+            </div>
+            <p>Tasks have their own status (<span className="doc-code">todo</span>, <span className="doc-code">in_progress</span>, <span className="doc-code">done</span>, <span className="doc-code">blocked</span>, <span className="doc-code">cancelled</span>), priority, due dates, and can be assigned to individual team members.</p>
+
+            <h3>Budget & Expenses</h3>
+            <p>Track spending against the project budget with line-item expenses:</p>
+            <div className="doc-code-block">
+                "Log an expense of €3,200 for Cisco switches on the Network Refresh, category hardware"<br />
+                "What's the budget status on the Network Refresh project?"<br />
+                "Show all expenses for the AV upgrade"
+            </div>
+            <p>Expense categories: <span className="doc-code">hardware</span>, <span className="doc-code">software</span>, <span className="doc-code">services</span>, <span className="doc-code">labor</span>, <span className="doc-code">travel</span>, <span className="doc-code">other</span>. The AI compares total expenses against the estimated budget when you ask for budget status.</p>
+
+            <h3>Progress Updates</h3>
+            <p>Post status updates, flag blockers, and record decisions:</p>
+            <div className="doc-code-block">
+                "Post an update on Network Refresh: cabling complete on floors 1 and 2"<br />
+                "Flag a blocker on the AV project: waiting for vendor delivery"<br />
+                "Record a decision: we're going with Cat6a cabling throughout"
+            </div>
+            <p>Update types: <span className="doc-code">progress</span>, <span className="doc-code">blocker</span>, <span className="doc-code">decision</span>, <span className="doc-code">milestone</span>, <span className="doc-code">general</span>.</p>
+
+            <h3>Linking to Other Entities</h3>
+            <p>Connect projects to existing records in the system — assets, tickets, contracts, events, or anything else:</p>
+            <div className="doc-code-block">
+                "Link the Cisco support contract to the Network Refresh project"<br />
+                "Associate asset #42 with the AV upgrade project"
+            </div>
+            <p>Links use a flexible entity_type + entity_id pattern, so any table in the database can be referenced.</p>
+
+            <div className="doc-callout">
+                <strong>Notes & Work Logs:</strong> You can also attach notes and log work time directly against projects and tasks using the existing notes and work_logs tables, which now include optional project_id and project_task_id fields.
+            </div>
         </section>
     );
 }
@@ -803,7 +891,7 @@ function SchemaSection() {
         {
             title: 'Support & Issues',
             tables: [
-                { name: 'requests', desc: 'Support tickets and service requests', cols: 'id, title, description, request_type (incident|service_request|question|access_request), priority (low|medium|high|critical), status (open|in_progress|pending|resolved|closed), source, requester_person_id, assigned_to_person_id, site_id, related_asset_id, opened_at, resolved_at, closed_at, important' },
+                { name: 'tickets', desc: 'Support tickets and service requests', cols: 'id, title, description, ticket_type (incident|service_request|question|access_request), priority (low|medium|high|critical), status (open|in_progress|pending|resolved|closed), source, requester_person_id, assigned_to_person_id, site_id, related_asset_id, opened_at, resolved_at, closed_at, due_date, important' },
                 { name: 'technical_issues', desc: 'Diagnosed technical problems', cols: 'id, title, description, issue_type (hardware|software|network|av|printing|access|other), severity, recurrence_status (one_off|intermittent|recurring|resolved), known_issue, knowledgeworthy, site_id, room_id, related_asset_id, important' },
                 { name: 'issue_occurrences', desc: 'Individual sightings of recurring issues', cols: 'id, issue_id, occurred_at, reported_by_person_id, notes' },
             ]
@@ -836,6 +924,17 @@ function SchemaSection() {
             tables: [
                 { name: 'changes', desc: 'Infrastructure/system changes', cols: 'id, title, description, change_type (standard|emergency|normal), risk_level (low|medium|high), status (planned|approved|in_progress|completed|rolled_back|cancelled), scheduled_start, scheduled_end, owner_person_id, site_id, important' },
                 { name: 'vendor_contracts', desc: 'Contracts and SLAs', cols: 'id, vendor_id, title, contract_type, start_date, end_date, value, status, notes' },
+            ]
+        },
+        {
+            title: 'Projects',
+            tables: [
+                { name: 'projects', desc: 'General-purpose project tracking', cols: 'id, name, description, site_id, owner_person_id, status (planned|active|on_hold|completed|cancelled), priority, category, budget_estimated, budget_currency, planned_start, planned_end, actual_start, actual_end, important' },
+                { name: 'project_members', desc: 'People involved in projects', cols: 'id, project_id, person_id, role (manager|contributor|stakeholder|observer)' },
+                { name: 'project_tasks', desc: 'Nestable work items within projects', cols: 'id, project_id, parent_task_id, title, description, assigned_person_id, status (todo|in_progress|done|blocked|cancelled), priority, due_date, completed_at, sort_order' },
+                { name: 'project_updates', desc: 'Progress log entries', cols: 'id, project_id, author_person_id, content, update_type (progress|blocker|decision|milestone|general)' },
+                { name: 'project_expenses', desc: 'Budget line items', cols: 'id, project_id, description, amount, currency, category (hardware|software|services|labor|travel|other), expense_date, approved_by_person_id' },
+                { name: 'project_links', desc: 'Flexible links to other entities', cols: 'id, project_id, entity_type, entity_id, note' },
             ]
         },
         {
@@ -896,11 +995,12 @@ function ScopeSection() {
             <h3>What TrueCore.cloud Covers</h3>
             <p>TrueCore.cloud is purpose-built for <strong>IT and workplace operations</strong> at managed client sites. It handles:</p>
             <ul>
-                <li>IT support: issues, requests, troubleshooting, asset management</li>
+                <li>IT support: issues, tickets, troubleshooting, asset management</li>
                 <li>Site operations: rooms, events, maintenance, outages</li>
                 <li>People management: teams, contacts, PTO, vendor reps</li>
                 <li>Inventory and spare parts tracking</li>
                 <li>Change management and vendor contracts</li>
+                <li>Project tracking and budget management</li>
                 <li>Knowledge capture and documentation</li>
                 <li>Work logging and time tracking</li>
                 <li>Operational email communications</li>
@@ -1056,7 +1156,7 @@ function QATestingSection() {
                     <tr>
                         <td>Stat cards display</td>
                         <td>Navigate to the Dashboard page</td>
-                        <td>Five stat cards show counts for Active Assets, Open Requests, Open Issues, Events This Week, and Important Items</td>
+                        <td>Five stat cards show counts for Active Assets, Open Tickets, Open Issues, Events This Week, and Important Items</td>
                     </tr>
                     <tr>
                         <td>Charts render</td>
@@ -1105,11 +1205,6 @@ function QATestingSection() {
                         <td>Click "Create Table", define columns, and submit</td>
                         <td>New table appears in the sidebar list</td>
                     </tr>
-                    <tr>
-                        <td>Drop table</td>
-                        <td>Select a table and use the drop/delete table action</td>
-                        <td>Table is removed from the sidebar; data is deleted</td>
-                    </tr>
                 </tbody>
             </table>
 
@@ -1131,11 +1226,6 @@ function QATestingSection() {
                         <td>Import & Merge (.xlsx)</td>
                         <td>Click "Import Merge" and upload a previously exported <span className="doc-code">.xlsx</span> file</td>
                         <td>Data is merged into existing tables; no duplicates created for matching rows</td>
-                    </tr>
-                    <tr>
-                        <td>Import & Merge (.db)</td>
-                        <td>Click "Import Merge" and upload a <span className="doc-code">.db</span> file</td>
-                        <td>Data from the uploaded database is merged into the current database</td>
                     </tr>
                 </tbody>
             </table>
@@ -1257,7 +1347,7 @@ function RoadmapSection() {
         <section id="roadmap" className="doc-section">
             <h2>Roadmap</h2>
             <p>
-                Current status: <strong>MVP complete</strong> — chat, database browser, and dashboard are functional. Focus is shifting to polish and production readiness.
+                Current status: <strong>Core platform complete</strong> — chat, database browser, dashboard, authentication, approval system, CSV import, email, knowledge management, and mobile responsiveness are all functional. Focus is on knowledge UI and advanced features.
             </p>
 
             <h3>Phase 1: Core MVP (Complete)</h3>
@@ -1273,19 +1363,20 @@ function RoadmapSection() {
                 <li><strong>Chat Session Persistence</strong> — Conversations saved and resumable across page loads</li>
             </ul>
 
-            <h3>Phase 2: Polish & Complete (Next)</h3>
+            <h3>Phase 2: Polish & Complete (Complete)</h3>
             <div className="doc-callout doc-callout--tip">
                 <strong>Goal:</strong> Finish partially-built features so the core experience feels complete and reliable.
             </div>
             <ul>
-                <li><strong>Approval Workflow</strong> — Wire up <span className="doc-code">approval_rules</span> and <span className="doc-code">pending_approvals</span> tables end-to-end so users can request changes and admins can approve/reject them</li>
-                <li><strong>CSV Import</strong> — Complete the AI-powered column mapping flow for importing spreadsheet data into the correct tables</li>
-                <li><strong>Table Creation / Column Addition</strong> — Ensure backend routes match frontend modals for creating new tables and adding columns</li>
-                <li><strong>Home Site Setup Wizard</strong> — Guided first-run experience for configuring a new site</li>
-                <li><strong>UI/UX Refinements</strong> — Badge text consistency, sidebar user panel polish, loading states, and general fit-and-finish</li>
+                <li><strong>Approval Workflow</strong> — Admin-defined rules, automatic query interception, approve/reject pending operations</li>
+                <li><strong>CSV Import</strong> — AI-powered column mapping with validation, approval integration, and retry on failure</li>
+                <li><strong>Table Creation / Column Addition</strong> — Backend routes and frontend modals for creating new tables and adding columns</li>
+                <li><strong>SQL Safety Policies</strong> — Destructive operations (DROP, TRUNCATE, ALTER DROP/RENAME) are system-blocked; protected tables require WHERE clauses</li>
+                <li><strong>Excel Generation</strong> — AI can generate downloadable .xlsx files from query results</li>
+                <li><strong>User Invitations</strong> — Instance owners can invite new users via email</li>
             </ul>
 
-            <h3>Phase 3: Knowledge & Content</h3>
+            <h3>Phase 3: Knowledge & Content (Next)</h3>
             <div className="doc-callout doc-callout--tip">
                 <strong>Goal:</strong> Users can build and maintain a structured knowledge base alongside their operational data, making the AI assistant more useful over time.
             </div>
@@ -1296,15 +1387,14 @@ function RoadmapSection() {
                 <li><strong>Site-Specific Notes</strong> — Miscellaneous knowledge and notes interface for capturing institutional knowledge</li>
             </ul>
 
-            <h3>Phase 4: Production Readiness</h3>
+            <h3>Phase 4: Production Readiness (In Progress)</h3>
             <div className="doc-callout doc-callout--tip">
                 <strong>Goal:</strong> The application is secure, deployable, and suitable for real-world use beyond development.
             </div>
             <ul>
-                <li><strong>Authentication & Login</strong> — Replace demo user switching with proper authentication (login page, sessions, password management)</li>
-                <li><strong>Environment / Secrets Management</strong> — Remove hardcoded API keys; use environment variables or a secrets manager</li>
-                <li><strong>Error Handling & Validation</strong> — Consistent error responses, input validation, and user-facing error messages</li>
-                <li><strong>Mobile Responsiveness</strong> — Ensure the UI works well on tablets and phones</li>
+                <li><s><strong>Authentication & Login</strong></s> — Complete: proper authentication with login, signup, sessions, and multi-instance support</li>
+                <li><s><strong>Mobile Responsiveness</strong></s> — Complete: fully responsive layout with hamburger navigation and off-canvas sidebars</li>
+                <li><s><strong>PostgreSQL Migration</strong></s> — Complete: migrated from SQLite to PostgreSQL with connection pooling and Row-Level Security</li>
                 <li><strong>Deployment Pipeline</strong> — Dockerfile, docker-compose, CI/CD configuration</li>
                 <li><strong>Security Audit</strong> — CORS lockdown, input sanitization, dependency audit, OWASP review</li>
             </ul>
@@ -1314,11 +1404,11 @@ function RoadmapSection() {
                 <strong>Goal:</strong> Stretch goals and backlog items to explore once the core product is solid.
             </div>
             <ul>
-                <li><strong>Multi-Site Support</strong> — Manage multiple sites from a single instance</li>
                 <li><strong>Real-Time Notifications</strong> — WebSocket-based alerts for approvals, report completions, and system events</li>
                 <li><strong>Audit Log Viewer</strong> — UI for browsing the audit trail of all data changes</li>
                 <li><strong>Advanced Reporting</strong> — Scheduled report customization, custom queries, export options</li>
-                <li><strong>Role-Based Access Control</strong> — Granular permissions beyond the current admin/user split</li>
+                <li><strong>Role-Based Access Control</strong> — Granular permissions beyond the current admin/user/owner split</li>
+                <li><strong>Home Site Setup Wizard</strong> — Guided first-run experience for configuring a new site</li>
             </ul>
         </section>
     );

@@ -216,7 +216,7 @@ def _build_content(response) -> list[dict[str, Any]]:
     return content
 
 
-def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role: str = "admin", instance_id: int = 1) -> list[dict]:
+def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role: str = "admin", instance_id: int = 1, current_user: dict[str, Any] | None = None) -> list[dict]:
     """Execute tool calls and return tool_result messages. Mutates sql_log."""
     ADMIN_ONLY_TOOLS = {"manage_approval_rules", "review_approvals"}
     tool_results = []
@@ -238,6 +238,18 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             sql = block["input"]["sql"]
             explanation = block["input"].get("explanation", "")
             sql_upper = sql.strip().upper()
+
+            # Block destructive DDL from the AI early with a clear message
+            if tool_name == "execute_sql" and sql_upper.startswith(("DROP", "TRUNCATE", "ALTER")):
+                result = {"error": "DROP, TRUNCATE, and ALTER statements are system-blocked and cannot be executed."}
+                sql_log.append({"tool": tool_name, "sql": sql, "explanation": explanation, "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
+            if tool_name == "create_table" and not sql_upper.startswith("CREATE"):
+                result = {"error": "The create_table tool can only be used for CREATE TABLE statements."}
+                sql_log.append({"tool": tool_name, "sql": sql, "explanation": explanation, "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
 
             # Check if this is a data write that should go through approval
             is_data_write = sql_upper.startswith(("INSERT", "UPDATE", "DELETE"))
@@ -554,6 +566,99 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 "content": json.dumps(result),
             })
 
+        elif tool_name == "manage_reminders":
+            inp = block["input"]
+            action = inp["action"]
+
+            if action == "create":
+                title = inp.get("title", "")
+                message = inp.get("message", "")
+                remind_at = inp.get("remind_at", "")
+                recurrence = inp.get("recurrence", "one_time")
+                target_person_id = inp.get("target_person_id")
+
+                if not title or not remind_at:
+                    result = {"error": "title and remind_at are required for creating a reminder"}
+                else:
+                    # Resolve target email
+                    if target_person_id:
+                        person = execute_query(
+                            "SELECT id, first_name, last_name, email FROM people WHERE id = ?",
+                            [target_person_id],
+                            instance_id=instance_id,
+                        )
+                    elif current_user and current_user.get("person_id"):
+                        person = execute_query(
+                            "SELECT id, first_name, last_name, email FROM people WHERE id = ?",
+                            [current_user["person_id"]],
+                            instance_id=instance_id,
+                        )
+                    else:
+                        person = {"rows": []}
+
+                    if not person.get("rows") or not person["rows"][0].get("email"):
+                        result = {"error": "Could not find an email address for the target person. Make sure they have an email set in the people table."}
+                    else:
+                        p = person["rows"][0]
+                        notify_email = p["email"]
+                        notify_person_id = p["id"]
+                        created_by = current_user["person_id"] if current_user and current_user.get("person_id") else None
+
+                        ins = execute_query(
+                            "INSERT INTO reminders (instance_id, title, message, remind_at, recurrence, notify_email, notify_person_id, created_by_person_id) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            [instance_id, title, message, remind_at, recurrence, notify_email, notify_person_id, created_by],
+                            instance_id=instance_id,
+                        )
+                        if "error" in ins:
+                            result = ins
+                        else:
+                            result = {
+                                "success": True,
+                                "reminder_id": ins.get("lastrowid"),
+                                "title": title,
+                                "remind_at": remind_at,
+                                "recurrence": recurrence,
+                                "notify_email": notify_email,
+                                "notify_person": f"{p['first_name']} {p['last_name']}",
+                            }
+
+            elif action == "list":
+                result = execute_query(
+                    "SELECT r.id, r.title, r.message, r.remind_at, r.recurrence, r.status, "
+                    "r.notify_email, r.last_sent_at, "
+                    "p.first_name || ' ' || p.last_name AS notify_person_name "
+                    "FROM reminders r "
+                    "LEFT JOIN people p ON r.notify_person_id = p.id AND p.instance_id = r.instance_id "
+                    "WHERE r.status IN ('active', 'paused') "
+                    "ORDER BY r.remind_at",
+                    instance_id=instance_id,
+                )
+
+            elif action == "cancel":
+                reminder_id = inp.get("reminder_id")
+                if not reminder_id:
+                    result = {"error": "reminder_id is required for cancelling a reminder"}
+                else:
+                    upd = execute_query(
+                        "UPDATE reminders SET status = 'cancelled' WHERE id = ?",
+                        [reminder_id],
+                        instance_id=instance_id,
+                    )
+                    if upd.get("rowcount", 0) == 0:
+                        result = {"error": f"Reminder #{reminder_id} not found or already cancelled"}
+                    else:
+                        result = {"success": True, "cancelled_id": reminder_id}
+            else:
+                result = {"error": f"Unknown action: {action}"}
+
+            sql_log.append({"tool": tool_name, "action": action, "result": result})
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block["id"],
+                "content": json.dumps(result),
+            })
+
         elif tool_name == "invite_user":
             inp = block["input"]
             email = inp["email"].strip().lower()
@@ -703,7 +808,7 @@ def chat_stream(
 
         if response.stop_reason == "tool_use":
             sql_log_before = len(sql_log)
-            tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id)
+            tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id, current_user=current_user)
             # Notify frontend about each SQL/file operation
             for entry in sql_log[sql_log_before:]:
                 if entry.get("tool") == "generate_excel":
@@ -763,5 +868,5 @@ def chat(
             }
 
         if response.stop_reason == "tool_use":
-            tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id)
+            tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id, current_user=current_user)
             messages.append({"role": "user", "content": tool_results})

@@ -70,7 +70,7 @@ async def list_senders(ctx: InstanceContext = Depends(get_current_instance)):
         "SELECT id, pattern, pattern_type, added_by_auth_user_id, created_at "
         "FROM inbound_email_senders WHERE instance_id = ? ORDER BY created_at DESC",
         [ctx.instance_id],
-        instance_id=None,
+        instance_id=ctx.instance_id,
     )
     return {"senders": result.get("rows", [])}
 
@@ -92,7 +92,7 @@ async def add_sender(body: AddSenderBody, ctx: InstanceContext = Depends(get_cur
         "INSERT INTO inbound_email_senders (instance_id, pattern, pattern_type, added_by_auth_user_id) "
         "VALUES (?, ?, ?, ?)",
         [ctx.instance_id, pattern, body.pattern_type, ctx.auth_user_id],
-        instance_id=None,
+        instance_id=ctx.instance_id,
     )
     if result.get("error"):
         if "unique" in result["error"].lower() or "duplicate" in result["error"].lower():
@@ -111,7 +111,7 @@ async def delete_sender(sender_id: int, ctx: InstanceContext = Depends(get_curre
     result = execute_query(
         "DELETE FROM inbound_email_senders WHERE id = ? AND instance_id = ?",
         [sender_id, ctx.instance_id],
-        instance_id=None,
+        instance_id=ctx.instance_id,
     )
     if result.get("rowcount", 0) == 0:
         raise HTTPException(status_code=404, detail="Sender pattern not found")
@@ -130,10 +130,10 @@ async def list_inbound_emails(ctx: InstanceContext = Depends(get_current_instanc
         raise HTTPException(status_code=403, detail="Only owner or admin can view inbound email log")
 
     result = execute_query(
-        "SELECT id, sender_email, sender_name, subject, status, technical_issue_id, "
+        "SELECT id, sender_email, sender_name, subject, status, ticket_id, "
         "error_message, received_at FROM inbound_emails "
         "WHERE instance_id = ? ORDER BY received_at DESC LIMIT 100",
         [ctx.instance_id],
-        instance_id=None,
+        instance_id=ctx.instance_id,
     )
     return {"emails": result.get("rows", [])}

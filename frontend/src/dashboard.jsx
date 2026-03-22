@@ -6,28 +6,16 @@ import {
 import { BillingSection } from './billing';
 
 const COLORS = ['#6c8cff', '#4ade80', '#f87171', '#fbbf24', '#a78bfa', '#38bdf8'];
+const AVATAR_COLORS = ['#6c8cff', '#4ade80', '#f87171', '#fbbf24', '#a78bfa', '#38bdf8', '#f472b6', '#34d399', '#fb923c', '#818cf8'];
 
 const tooltipStyle = {
     contentStyle: { background: '#1a1d27', border: '1px solid #2d3045', borderRadius: 8, fontSize: 13 },
     labelStyle: { color: '#9ca0b0' },
 };
 
-const DEMO_FILES = [
-    { name: 'companies.csv', description: '4 client & vendor companies', hint: 'Upload via chat' },
-    { name: 'sites.csv', description: '3 office sites across Dublin, Austin, London', hint: 'Upload via chat' },
-    { name: 'rooms.csv', description: '10 rooms — server rooms, offices, conference rooms', hint: 'Upload via chat' },
-    { name: 'people.csv', description: '12 staff with roles, departments, sites', hint: 'Upload via chat' },
-    { name: 'assets.csv', description: '15 laptops, monitors, switches, printers, APs', hint: 'Upload via chat' },
-    { name: 'requests.csv', description: '12 support tickets in various statuses', hint: 'Upload via chat' },
-    { name: 'technical_issues.csv', description: '8 known issues with symptoms & resolutions', hint: 'Upload via chat' },
-    { name: 'events.csv', description: '6 vendor visits, maintenance, training sessions', hint: 'Upload via chat' },
-    { name: 'inventory_items.csv', description: '10 spare parts, cables, toner, consumables', hint: 'Upload via chat' },
-    { name: 'demo_full_import.xlsx', description: 'All tables in one workbook', hint: 'Use Import & Merge' },
-];
-
 const CARD_ACCENTS = {
     'Active Assets': '#6c8cff',
-    'Open Requests': '#4ade80',
+    'Open Tickets': '#4ade80',
     'Open Issues': '#f87171',
     'Events This Week': '#fbbf24',
     'Flagged Important': '#a78bfa',
@@ -61,6 +49,159 @@ function EmptyChart() {
                 <line x1="2" y1="20" x2="22" y2="20"/>
             </svg>
             <span>No data yet</span>
+        </div>
+    );
+}
+
+function RemindersSection() {
+    const [reminders, setReminders] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const loadReminders = () => {
+        fetch('/api/reminders', { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => { setReminders(d.reminders || []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    useEffect(() => { loadReminders(); }, []);
+
+    const cancelReminder = async (id) => {
+        const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE', credentials: 'include' });
+        const data = await res.json();
+        if (data.ok) loadReminders();
+        else alert(data.error || 'Failed to cancel reminder');
+    };
+
+    const formatDate = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
+    const recurrenceLabel = (r) => {
+        if (r === 'one_time') return 'Once';
+        return r.charAt(0).toUpperCase() + r.slice(1);
+    };
+
+    if (loading) return null;
+
+    return (
+        <div className="dashboard-management">
+            <div className="dashboard-management-title">Reminders</div>
+            {reminders.length === 0 ? (
+                <div className="dashboard-management-hint">
+                    No active reminders. Use the chat to create one — try "remind me to check the server room tomorrow at 9am".
+                </div>
+            ) : (
+                <div className="reminders-list">
+                    {reminders.map(r => (
+                        <div key={r.id} className="reminder-row">
+                            <div className="reminder-info">
+                                <span className="reminder-title">{r.title}</span>
+                                <span className="reminder-meta">
+                                    {formatDate(r.remind_at)} &middot; {recurrenceLabel(r.recurrence)}
+                                    {r.notify_person_name && <> &middot; {r.notify_person_name}</>}
+                                </span>
+                            </div>
+                            <button className="btn btn-sm btn-danger" onClick={() => cancelReminder(r.id)}>Cancel</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function QueryPoolSection() {
+    const [usage, setUsage] = useState(null);
+    useEffect(() => {
+        fetch('/api/dashboard/usage', { credentials: 'include' })
+            .then(r => r.json()).then(setUsage).catch(console.error);
+    }, []);
+    if (!usage) return null;
+    const remaining = usage.queries_remaining;
+    const total = usage.query_limit;
+    const usedPct = total > 0 ? Math.min(100, ((total - remaining) / total) * 100) : 0;
+    const resetDate = usage.query_pool_reset_at ? new Date(usage.query_pool_reset_at).toLocaleDateString() : null;
+    const isFree = usage.tier === 'free';
+
+    return (
+        <div className="dashboard-management">
+            <div className="dashboard-management-title">Query Pool</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span className="query-pool-remaining">{remaining}</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>of {total} queries remaining</span>
+            </div>
+            <div className="billing-usage-bar" style={{ marginTop: 8 }}>
+                <div className="billing-usage-fill" style={{ width: `${usedPct}%`, background: usedPct > 80 ? '#f87171' : usedPct > 60 ? '#fbbf24' : '#4ade80' }} />
+            </div>
+            <div className="query-pool-explanation">
+                A query is one interaction with the AI assistant in Chat.
+                {isFree && <><br />Your instance received 60 free queries for demo purposes.</>}
+                <br />Each added user contributes 250 queries/month to the pool. {usage.seat_count} user{usage.seat_count !== 1 ? 's' : ''} x 250 = {usage.base_queries} base queries.
+                {resetDate && <><br />Pool resets on {resetDate}.</>}
+            </div>
+        </div>
+    );
+}
+
+function UserCard({ user, currentUser, onRoleChange, onRemove, onMottoSaved }) {
+    const [editingMotto, setEditingMotto] = useState(false);
+    const [mottoVal, setMottoVal] = useState(user.motto || '');
+    const isOwnCard = currentUser?.person_id === user.id;
+    const initials = (user.first_name?.[0] || '') + (user.last_name?.[0] || '');
+    const color = AVATAR_COLORS[user.id % AVATAR_COLORS.length];
+
+    const saveMotto = async () => {
+        const res = await fetch(`/api/dashboard/users/${user.id}/motto`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ motto: mottoVal, requesting_person_id: currentUser?.person_id }),
+        });
+        const data = await res.json();
+        if (data.ok) { setEditingMotto(false); onMottoSaved(); }
+        else alert(data.error || 'Failed to save motto');
+    };
+
+    return (
+        <div className="user-card">
+            <div className="user-card-avatar" style={{ background: color }}>{initials.toUpperCase()}</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{user.first_name} {user.last_name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{user.email || 'No email'}</div>
+            <span className={`user-role-badge role-${user.user_role}`}>{user.user_role}</span>
+            {editingMotto ? (
+                <div style={{ width: '100%', display: 'flex', gap: 4 }}>
+                    <input
+                        className="form-input"
+                        style={{ flex: 1, fontSize: 12 }}
+                        value={mottoVal}
+                        onChange={e => setMottoVal(e.target.value)}
+                        maxLength={200}
+                        placeholder="Your motto..."
+                        onKeyDown={e => e.key === 'Enter' && saveMotto()}
+                    />
+                    <button className="btn btn-sm btn-primary" onClick={saveMotto}>Save</button>
+                    <button className="btn btn-sm" onClick={() => { setEditingMotto(false); setMottoVal(user.motto || ''); }}>Cancel</button>
+                </div>
+            ) : (
+                <div className="user-card-motto" onClick={isOwnCard ? () => setEditingMotto(true) : undefined} style={isOwnCard ? { cursor: 'pointer' } : {}}>
+                    {user.motto || (isOwnCard ? 'Click to add a motto...' : '')}
+                </div>
+            )}
+            {(currentUser?.role === 'owner' || currentUser?.role === 'admin') && user.user_role !== 'owner' && (
+                <div className="user-actions" style={{ marginTop: 4 }}>
+                    {currentUser?.role === 'owner' && (
+                        <select className="btn btn-sm" value={user.user_role} onChange={e => onRoleChange(user.id, e.target.value)}>
+                            <option value="user">user</option>
+                            <option value="admin">admin</option>
+                        </select>
+                    )}
+                    {(currentUser?.role === 'owner' || (currentUser?.role === 'admin' && user.user_role === 'user')) && (
+                        <button className="btn btn-sm btn-danger" onClick={() => onRemove(user.id)}>Remove</button>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -198,7 +339,7 @@ export function DashboardPage({ currentUser }) {
 
             <div className="dashboard-cards">
                 <StatCard label="Active Assets" value={overview?.active_assets} accent={CARD_ACCENTS['Active Assets']} />
-                <StatCard label="Open Requests" value={overview?.open_requests} accent={CARD_ACCENTS['Open Requests']} />
+                <StatCard label="Open Tickets" value={overview?.open_tickets} accent={CARD_ACCENTS['Open Tickets']} />
                 <StatCard label="Open Issues" value={overview?.open_issues} accent={CARD_ACCENTS['Open Issues']} />
                 <StatCard label="Events This Week" value={overview?.events_this_week} accent={CARD_ACCENTS['Events This Week']} />
                 <StatCard label="Flagged Important" value={overview?.important_items} accent={CARD_ACCENTS['Flagged Important']} />
@@ -242,7 +383,7 @@ export function DashboardPage({ currentUser }) {
                     ) : <EmptyChart />}
                 </ChartBox>
 
-                <ChartBox title="Requests by Status">
+                <ChartBox title="Tickets by Status">
                     {issues.by_status.length > 0 ? (
                         <ResponsiveContainer width="100%" height={260}>
                             <BarChart data={issues.by_status} layout="vertical">
@@ -277,38 +418,30 @@ export function DashboardPage({ currentUser }) {
                 </p>
             )}
 
+            <QueryPoolSection />
+
+            <RemindersSection />
+
             {currentUser?.role === 'owner' && (
                 <BillingSection currentUser={currentUser} />
             )}
 
-            {isPrivileged && (
-                <div className="dashboard-management">
-                    <div className="dashboard-management-title">User Management</div>
-                    <div className="user-list">
-                        {users.map(u => (
-                            <div key={u.id} className="user-row">
-                                <div className="user-info">
-                                    <span className="user-name">{u.first_name} {u.last_name}</span>
-                                    <span className="user-email">{u.email || 'No email'}</span>
-                                    <span className={`user-role-badge role-${u.user_role}`}>{u.user_role}</span>
-                                </div>
-                                <div className="user-actions">
-                                    {currentUser?.role === 'owner' && u.user_role !== 'owner' && (
-                                        <select className="btn btn-sm" value={u.user_role} onChange={e => handleRoleChange(u.id, e.target.value)}>
-                                            <option value="user">user</option>
-                                            <option value="admin">admin</option>
-                                        </select>
-                                    )}
-                                    {u.user_role !== 'owner' && (
-                                        (currentUser?.role === 'owner' || (currentUser?.role === 'admin' && u.user_role === 'user')) && (
-                                            <button className="btn btn-sm btn-danger" onClick={() => handleRemoveUser(u.id)}>Remove</button>
-                                        )
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    {addingUser ? (
+            <div className="dashboard-management">
+                <div className="dashboard-management-title">User Management</div>
+                <div className="user-cards-grid">
+                    {users.map(u => (
+                        <UserCard
+                            key={u.id}
+                            user={u}
+                            currentUser={currentUser}
+                            onRoleChange={handleRoleChange}
+                            onRemove={handleRemoveUser}
+                            onMottoSaved={loadUsers}
+                        />
+                    ))}
+                </div>
+                {isPrivileged && (
+                    addingUser ? (
                         <div className="add-user-form">
                             <input className="form-input" placeholder="First name" value={newUser.first_name} onChange={e => setNewUser({ ...newUser, first_name: e.target.value })} />
                             <input className="form-input" placeholder="Last name" value={newUser.last_name} onChange={e => setNewUser({ ...newUser, last_name: e.target.value })} />
@@ -328,30 +461,13 @@ export function DashboardPage({ currentUser }) {
                         <div className="dashboard-management-row" style={{ marginTop: 12 }}>
                             <button className="btn btn-sm btn-primary" onClick={() => setAddingUser(true)}>+ Add User</button>
                         </div>
-                    )}
-                </div>
-            )}
-
-            <div className="dashboard-management">
-                <div className="dashboard-management-title">Dummy Files for Demo</div>
-                <div className="dashboard-management-hint">
-                    Download sample data to test the chatbot (CSV) or Import &amp; Merge (XLSX). Feel free to modify these files or use your own.
-                </div>
-                <div className="demo-files-grid">
-                    {DEMO_FILES.map(f => (
-                        <a key={f.name} href={`/dummy_files/${f.name}`} download className="btn btn-sm" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: '0.15rem' }}>
-                            <span style={{ fontWeight: 600 }}>{f.name}</span>
-                            <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{f.description}</span>
-                            <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>{f.hint}</span>
-                        </a>
-                    ))}
-                </div>
+                    )
+                )}
             </div>
 
             <div className="dashboard-management">
                 <div className="dashboard-management-title">Database Management</div>
                 <div className="dashboard-management-row">
-                    <a href="/api/tables/download" download className="btn btn-sm">Download .db</a>
                     <a href="/api/tables/export" download className="btn btn-sm">Export .xlsx</a>
                     <button
                         className="btn btn-sm btn-primary"
@@ -362,7 +478,7 @@ export function DashboardPage({ currentUser }) {
                     </button>
                     <input
                         type="file"
-                        accept=".xlsx,.db"
+                        accept=".xlsx"
                         ref={importRef}
                         style={{ display: 'none' }}
                         onChange={handleImportMerge}
@@ -374,7 +490,7 @@ export function DashboardPage({ currentUser }) {
             </div>
 
             <div className="dashboard-management">
-                <div className="dashboard-management-title">Demo-only</div>
+                <div className="dashboard-management-title">Admin Actions</div>
                 <div className="dashboard-management-row">
                     {isPrivileged && (
                         <button

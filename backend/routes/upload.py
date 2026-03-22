@@ -5,7 +5,7 @@ import os
 import re
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from backend.auth import InstanceContext, get_current_instance
 from backend.database import execute_query, get_tables

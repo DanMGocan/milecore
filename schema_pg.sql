@@ -137,6 +137,7 @@ CREATE TABLE people (
     is_user BOOLEAN NOT NULL DEFAULT FALSE,
     username TEXT,
     user_role TEXT DEFAULT 'user',
+    motto TEXT,
     status TEXT DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (site_id) REFERENCES sites(id),
@@ -199,15 +200,15 @@ CREATE TABLE asset_relationships (
 );
 
 -- Support & Issues
-CREATE TABLE requests (
+CREATE TABLE tickets (
     id BIGSERIAL PRIMARY KEY,
     instance_id BIGINT NOT NULL REFERENCES instances(id),
-    request_number TEXT,
+    ticket_number TEXT,
     requester_person_id INTEGER,
     site_id INTEGER,
     room_id INTEGER,
     asset_id INTEGER,
-    request_type TEXT NOT NULL,
+    ticket_type TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
     priority TEXT DEFAULT 'medium',
@@ -218,6 +219,7 @@ CREATE TABLE requests (
     opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at TIMESTAMPTZ,
     closed_at TIMESTAMPTZ,
+    due_date DATE,
     important BOOLEAN NOT NULL DEFAULT FALSE,
     FOREIGN KEY (requester_person_id) REFERENCES people(id),
     FOREIGN KEY (site_id) REFERENCES sites(id),
@@ -228,7 +230,7 @@ CREATE TABLE requests (
 CREATE TABLE technical_issues (
     id BIGSERIAL PRIMARY KEY,
     instance_id BIGINT NOT NULL REFERENCES instances(id),
-    request_id INTEGER,
+    ticket_id INTEGER,
     asset_id INTEGER,
     site_id INTEGER,
     room_id INTEGER,
@@ -259,7 +261,7 @@ CREATE TABLE issue_occurrences (
     instance_id BIGINT NOT NULL REFERENCES instances(id),
     technical_issue_id INTEGER NOT NULL,
     asset_id INTEGER,
-    request_id INTEGER,
+    ticket_id INTEGER,
     site_id INTEGER,
     room_id INTEGER,
     observed_by_person_id INTEGER,
@@ -282,7 +284,7 @@ CREATE TABLE events (
     end_time TIMESTAMPTZ,
     status TEXT DEFAULT 'planned',
     owner_person_id INTEGER,
-    related_request_id INTEGER,
+    related_ticket_id INTEGER,
     impact_level TEXT,
     needs_support BOOLEAN NOT NULL DEFAULT FALSE,
     important BOOLEAN NOT NULL DEFAULT FALSE,
@@ -321,9 +323,11 @@ CREATE TABLE notes (
     site_id INTEGER,
     room_id INTEGER,
     asset_id INTEGER,
-    request_id INTEGER,
+    ticket_id INTEGER,
     technical_issue_id INTEGER,
     event_id INTEGER,
+    project_id INTEGER,
+    project_task_id INTEGER,
     created_by_person_id INTEGER,
     visibility TEXT DEFAULT 'internal',
     important BOOLEAN NOT NULL DEFAULT FALSE,
@@ -334,10 +338,12 @@ CREATE TABLE notes (
 CREATE TABLE work_logs (
     id BIGSERIAL PRIMARY KEY,
     instance_id BIGINT NOT NULL REFERENCES instances(id),
-    request_id INTEGER,
+    ticket_id INTEGER,
     technical_issue_id INTEGER,
     event_id INTEGER,
     asset_id INTEGER,
+    project_id INTEGER,
+    project_task_id INTEGER,
     person_id INTEGER NOT NULL,
     action_type TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -385,7 +391,7 @@ CREATE TABLE inventory_transactions (
     transaction_type TEXT NOT NULL,
     quantity INTEGER NOT NULL,
     related_person_id INTEGER,
-    related_request_id INTEGER,
+    related_ticket_id INTEGER,
     performed_by_person_id INTEGER,
     notes TEXT,
     important BOOLEAN NOT NULL DEFAULT FALSE,
@@ -431,6 +437,103 @@ CREATE TABLE vendor_contracts (
     notes TEXT,
     FOREIGN KEY (company_id) REFERENCES companies(id)
 );
+
+-- Projects
+CREATE TABLE IF NOT EXISTS projects (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    site_id BIGINT REFERENCES sites(id),
+    owner_person_id BIGINT REFERENCES people(id),
+    status VARCHAR(20) NOT NULL DEFAULT 'planned'
+        CHECK (status IN ('planned','active','on_hold','completed','cancelled')),
+    priority VARCHAR(10) NOT NULL DEFAULT 'medium'
+        CHECK (priority IN ('low','medium','high','critical')),
+    category VARCHAR(20) NOT NULL DEFAULT 'other'
+        CHECK (category IN ('infrastructure','operations','maintenance','deployment','migration','other')),
+    budget_estimated NUMERIC(12,2),
+    budget_currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
+    planned_start DATE,
+    planned_end DATE,
+    actual_start DATE,
+    actual_end DATE,
+    important BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    person_id BIGINT NOT NULL REFERENCES people(id),
+    role VARCHAR(20) NOT NULL DEFAULT 'contributor'
+        CHECK (role IN ('manager','contributor','stakeholder','observer')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(project_id, person_id)
+);
+
+CREATE TABLE IF NOT EXISTS project_tasks (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    parent_task_id BIGINT REFERENCES project_tasks(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    assigned_person_id BIGINT REFERENCES people(id),
+    status VARCHAR(20) NOT NULL DEFAULT 'todo'
+        CHECK (status IN ('todo','in_progress','done','blocked','cancelled')),
+    priority VARCHAR(10) NOT NULL DEFAULT 'medium'
+        CHECK (priority IN ('low','medium','high','critical')),
+    due_date DATE,
+    completed_at TIMESTAMPTZ,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS project_updates (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    author_person_id BIGINT REFERENCES people(id),
+    content TEXT NOT NULL,
+    update_type VARCHAR(20) NOT NULL DEFAULT 'general'
+        CHECK (update_type IN ('progress','blocker','decision','milestone','general')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS project_expenses (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    description VARCHAR(255) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
+    category VARCHAR(20) NOT NULL DEFAULT 'other'
+        CHECK (category IN ('hardware','software','services','labor','travel','other')),
+    expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    approved_by_person_id BIGINT REFERENCES people(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS project_links (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id BIGINT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(project_id, entity_type, entity_id)
+);
+
+-- Add project FK constraints to notes and work_logs
+ALTER TABLE notes ADD CONSTRAINT fk_notes_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL;
+ALTER TABLE notes ADD CONSTRAINT fk_notes_project_task FOREIGN KEY (project_task_id) REFERENCES project_tasks(id) ON DELETE SET NULL;
+ALTER TABLE work_logs ADD CONSTRAINT fk_work_logs_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL;
+ALTER TABLE work_logs ADD CONSTRAINT fk_work_logs_project_task FOREIGN KEY (project_task_id) REFERENCES project_tasks(id) ON DELETE SET NULL;
 
 -- Knowledge & Metadata
 CREATE TABLE misc_knowledge (
@@ -591,6 +694,25 @@ CREATE TABLE subscription_events (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Reminders
+CREATE TABLE reminders (
+    id BIGSERIAL PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    title TEXT NOT NULL,
+    message TEXT,
+    remind_at TIMESTAMPTZ NOT NULL,
+    recurrence TEXT DEFAULT 'one_time'
+        CHECK (recurrence IN ('one_time', 'daily', 'weekly', 'monthly')),
+    status TEXT DEFAULT 'active'
+        CHECK (status IN ('active', 'paused', 'completed', 'cancelled')),
+    notify_email TEXT NOT NULL,
+    notify_person_id INTEGER REFERENCES people(id),
+    created_by_person_id INTEGER REFERENCES people(id),
+    last_sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Inbound Email Routing
 CREATE TABLE inbound_email_senders (
     id BIGSERIAL PRIMARY KEY,
@@ -612,7 +734,7 @@ CREATE TABLE inbound_emails (
     body_plain TEXT,
     from_domain TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
-    technical_issue_id BIGINT,
+    ticket_id BIGINT,
     error_message TEXT,
     brevo_message_id TEXT,
     received_at TIMESTAMPTZ DEFAULT NOW()
@@ -659,6 +781,14 @@ CREATE TRIGGER workflows_updated_at
     BEFORE UPDATE ON workflows
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER projects_updated_at
+    BEFORE UPDATE ON projects
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER project_tasks_updated_at
+    BEFORE UPDATE ON project_tasks
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER auth_users_updated_at
     BEFORE UPDATE ON auth_users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -667,18 +797,53 @@ CREATE TRIGGER instances_updated_at
     BEFORE UPDATE ON instances
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER reminders_updated_at
+    BEFORE UPDATE ON reminders
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Working-days helper for ticket due_date
+CREATE OR REPLACE FUNCTION add_working_days(start_date DATE, n INTEGER)
+RETURNS DATE LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+  result DATE := start_date;
+  added  INTEGER := 0;
+BEGIN
+  WHILE added < n LOOP
+    result := result + 1;
+    IF EXTRACT(DOW FROM result) NOT IN (0, 6) THEN
+      added := added + 1;
+    END IF;
+  END LOOP;
+  RETURN result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION set_ticket_due_date()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.due_date IS NULL THEN
+    NEW.due_date := add_working_days(NEW.opened_at::date, 3);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_ticket_due_date
+  BEFORE INSERT ON tickets
+  FOR EACH ROW EXECUTE FUNCTION set_ticket_due_date();
+
 -- ============================================================
 -- 4. COMPOSITE UNIQUE INDEXES (per-instance uniqueness)
 -- ============================================================
 
 CREATE UNIQUE INDEX uq_assets_asset_tag_instance ON assets(instance_id, asset_tag);
 CREATE UNIQUE INDEX uq_people_username_instance ON people(instance_id, username);
-CREATE UNIQUE INDEX uq_requests_request_number_instance ON requests(instance_id, request_number);
+CREATE UNIQUE INDEX uq_tickets_ticket_number_instance ON tickets(instance_id, ticket_number);
 CREATE UNIQUE INDEX uq_inventory_items_sku_instance ON inventory_items(instance_id, sku);
 CREATE UNIQUE INDEX uq_tags_name_instance ON tags(instance_id, name);
 
 -- ============================================================
--- 5. ROW-LEVEL SECURITY POLICIES (all 31 tenant-scoped tables)
+-- 5. ROW-LEVEL SECURITY POLICIES (all 33 tenant-scoped tables)
 -- ============================================================
 
 -- companies
@@ -745,12 +910,12 @@ CREATE POLICY asset_relationships_tenant_isolation ON asset_relationships
 CREATE POLICY asset_relationships_tenant_insert ON asset_relationships
     FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
 
--- requests
-ALTER TABLE requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE requests FORCE ROW LEVEL SECURITY;
-CREATE POLICY requests_tenant_isolation ON requests
+-- tickets
+ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tickets FORCE ROW LEVEL SECURITY;
+CREATE POLICY tickets_tenant_isolation ON tickets
     USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
-CREATE POLICY requests_tenant_insert ON requests
+CREATE POLICY tickets_tenant_insert ON tickets
     FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
 
 -- technical_issues
@@ -849,6 +1014,54 @@ CREATE POLICY vendor_contracts_tenant_isolation ON vendor_contracts
 CREATE POLICY vendor_contracts_tenant_insert ON vendor_contracts
     FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
 
+-- projects
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects FORCE ROW LEVEL SECURITY;
+CREATE POLICY projects_tenant_isolation ON projects
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY projects_tenant_insert ON projects
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
+-- project_members
+ALTER TABLE project_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_members FORCE ROW LEVEL SECURITY;
+CREATE POLICY project_members_tenant_isolation ON project_members
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY project_members_tenant_insert ON project_members
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
+-- project_tasks
+ALTER TABLE project_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_tasks FORCE ROW LEVEL SECURITY;
+CREATE POLICY project_tasks_tenant_isolation ON project_tasks
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY project_tasks_tenant_insert ON project_tasks
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
+-- project_updates
+ALTER TABLE project_updates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_updates FORCE ROW LEVEL SECURITY;
+CREATE POLICY project_updates_tenant_isolation ON project_updates
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY project_updates_tenant_insert ON project_updates
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
+-- project_expenses
+ALTER TABLE project_expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_expenses FORCE ROW LEVEL SECURITY;
+CREATE POLICY project_expenses_tenant_isolation ON project_expenses
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY project_expenses_tenant_insert ON project_expenses
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
+-- project_links
+ALTER TABLE project_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_links FORCE ROW LEVEL SECURITY;
+CREATE POLICY project_links_tenant_isolation ON project_links
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY project_links_tenant_insert ON project_links
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
 -- misc_knowledge
 ALTER TABLE misc_knowledge ENABLE ROW LEVEL SECURITY;
 ALTER TABLE misc_knowledge FORCE ROW LEVEL SECURITY;
@@ -937,8 +1150,32 @@ CREATE POLICY pending_approvals_tenant_isolation ON pending_approvals
 CREATE POLICY pending_approvals_tenant_insert ON pending_approvals
     FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
 
+-- inbound_email_senders
+ALTER TABLE inbound_email_senders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inbound_email_senders FORCE ROW LEVEL SECURITY;
+CREATE POLICY inbound_email_senders_tenant_isolation ON inbound_email_senders
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY inbound_email_senders_tenant_insert ON inbound_email_senders
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
+-- reminders
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reminders FORCE ROW LEVEL SECURITY;
+CREATE POLICY reminders_tenant_isolation ON reminders
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY reminders_tenant_insert ON reminders
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
+-- inbound_emails
+ALTER TABLE inbound_emails ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inbound_emails FORCE ROW LEVEL SECURITY;
+CREATE POLICY inbound_emails_tenant_isolation ON inbound_emails
+    USING (instance_id = current_setting('app.current_instance_id', true)::bigint);
+CREATE POLICY inbound_emails_tenant_insert ON inbound_emails
+    FOR INSERT WITH CHECK (instance_id = current_setting('app.current_instance_id', true)::bigint);
+
 -- ============================================================
--- 6. INSTANCE_ID B-TREE INDEXES (all 31 tenant-scoped tables)
+-- 6. INSTANCE_ID B-TREE INDEXES (all 33 tenant-scoped tables)
 -- ============================================================
 
 CREATE INDEX idx_companies_instance ON companies(instance_id);
@@ -949,7 +1186,7 @@ CREATE INDEX idx_people_instance ON people(instance_id);
 CREATE INDEX idx_pto_instance ON pto(instance_id);
 CREATE INDEX idx_assets_instance ON assets(instance_id);
 CREATE INDEX idx_asset_relationships_instance ON asset_relationships(instance_id);
-CREATE INDEX idx_requests_instance ON requests(instance_id);
+CREATE INDEX idx_tickets_instance ON tickets(instance_id);
 CREATE INDEX idx_technical_issues_instance ON technical_issues(instance_id);
 CREATE INDEX idx_issue_occurrences_instance ON issue_occurrences(instance_id);
 CREATE INDEX idx_events_instance ON events(instance_id);
@@ -972,3 +1209,11 @@ CREATE INDEX idx_chat_sessions_instance ON chat_sessions(instance_id);
 CREATE INDEX idx_chat_messages_instance ON chat_messages(instance_id);
 CREATE INDEX idx_approval_rules_instance ON approval_rules(instance_id);
 CREATE INDEX idx_pending_approvals_instance ON pending_approvals(instance_id);
+CREATE INDEX idx_projects_instance ON projects(instance_id);
+CREATE INDEX idx_project_members_instance ON project_members(instance_id);
+CREATE INDEX idx_project_tasks_instance ON project_tasks(instance_id);
+CREATE INDEX idx_project_updates_instance ON project_updates(instance_id);
+CREATE INDEX idx_project_expenses_instance ON project_expenses(instance_id);
+CREATE INDEX idx_project_links_instance ON project_links(instance_id);
+CREATE INDEX idx_reminders_instance ON reminders(instance_id);
+CREATE INDEX idx_reminders_due ON reminders(status, remind_at) WHERE status = 'active';

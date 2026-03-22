@@ -2,7 +2,7 @@
 
 Brevo Inbound Parsing POSTs parsed emails to our webhook. This module
 extracts the target instance from the TO address, validates the sender,
-uses Claude to extract structured fields, and creates a technical_issues record.
+uses Claude to extract structured fields, and creates a tickets record.
 """
 
 from __future__ import annotations
@@ -103,11 +103,10 @@ def _check_rate_limit(sender_email: str) -> bool:
 
 _EXTRACTION_PROMPT = """You are extracting structured fields from an inbound support email to create a ticket.
 Return ONLY a JSON object with these fields:
-- title: concise issue title (max 100 chars)
-- symptom: the problem description
-- issue_type: one of (hardware, software, network, AV, printing, access, other)
-- severity: one of (low, medium, high, critical)
-- category: specific category if determinable (e.g. "laptop", "wifi", "projector")"""
+- title: concise ticket title (max 100 chars)
+- description: the problem description
+- ticket_type: one of (incident, service_request, question, access_request)
+- priority: one of (low, medium, high, critical)"""
 
 
 def _extract_fields_with_claude(subject: str, body: str, instance_id: int) -> dict:
@@ -146,10 +145,9 @@ def _extract_fields_with_claude(subject: str, body: str, instance_id: int) -> di
         fields = json.loads(text)
         return {
             "title": str(fields.get("title", subject))[:100],
-            "symptom": str(fields.get("symptom", body)),
-            "issue_type": str(fields.get("issue_type", "other")),
-            "severity": str(fields.get("severity", "medium")),
-            "category": str(fields.get("category", "")),
+            "description": str(fields.get("description", body)),
+            "ticket_type": str(fields.get("ticket_type", "incident")),
+            "priority": str(fields.get("priority", "medium")),
         }
     except Exception as e:
         logger.error("Claude extraction failed: %s", e)
@@ -160,10 +158,9 @@ def _raw_extract(subject: str, body: str) -> dict:
     """Fallback extraction: use email fields directly."""
     return {
         "title": (subject or "Inbound email ticket")[:100],
-        "symptom": body or subject or "",
-        "issue_type": "other",
-        "severity": "medium",
-        "category": "",
+        "description": body or subject or "",
+        "ticket_type": "incident",
+        "priority": "medium",
     }
 
 
@@ -171,36 +168,39 @@ def _raw_extract(subject: str, body: str) -> dict:
 # Person matching
 # ---------------------------------------------------------------------------
 
-def _match_sender_to_person(instance_id: int, sender_email: str) -> int | None:
-    """Try to find a people record matching the sender email."""
+def _match_sender_to_person(instance_id: int, sender_email: str) -> dict | None:
+    """Try to find a people record matching the sender email.
+
+    Returns ``{"id": ..., "site_id": ...}`` or ``None``.
+    """
     result = execute_query(
-        "SELECT id FROM people WHERE LOWER(email) = LOWER(?) LIMIT 1",
+        "SELECT id, site_id FROM people WHERE LOWER(email) = LOWER(?) LIMIT 1",
         [sender_email],
         instance_id=instance_id,
     )
     if result.get("rows"):
-        return result["rows"][0]["id"]
+        return result["rows"][0]
     return None
 
 
 # ---------------------------------------------------------------------------
-# Issue creation
+# Ticket creation
 # ---------------------------------------------------------------------------
 
-def _create_issue(instance_id: int, fields: dict, reported_by: int | None) -> int:
-    """Insert a technical_issues record and return its id."""
+def _create_ticket(instance_id: int, fields: dict, requester_id: int | None, site_id: int | None) -> int:
+    """Insert a tickets record and return its id."""
     result = execute_query(
-        "INSERT INTO technical_issues "
-        "(instance_id, issue_type, category, title, symptom, severity, reported_by_person_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tickets "
+        "(instance_id, ticket_type, title, description, priority, source, requester_person_id, site_id) "
+        "VALUES (?, ?, ?, ?, ?, 'email', ?, ?)",
         [
             instance_id,
-            fields["issue_type"],
-            fields.get("category", ""),
+            fields["ticket_type"],
             fields["title"],
-            fields["symptom"],
-            fields["severity"],
-            reported_by,
+            fields["description"],
+            fields["priority"],
+            requester_id,
+            site_id,
         ],
         instance_id=instance_id,
     )
@@ -220,7 +220,7 @@ def _log_inbound_email(
     body_plain: str | None,
     from_domain: str,
     status: str,
-    technical_issue_id: int | None = None,
+    ticket_id: int | None = None,
     error_message: str | None = None,
     brevo_message_id: str | None = None,
 ) -> int | None:
@@ -228,7 +228,7 @@ def _log_inbound_email(
     result = execute_query(
         "INSERT INTO inbound_emails "
         "(instance_id, sender_email, sender_name, subject, body_plain, from_domain, "
-        "status, technical_issue_id, error_message, brevo_message_id) "
+        "status, ticket_id, error_message, brevo_message_id) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         [
             instance_id,
@@ -238,7 +238,7 @@ def _log_inbound_email(
             body_plain,
             from_domain,
             status,
-            technical_issue_id,
+            ticket_id,
             error_message,
             brevo_message_id,
         ],
@@ -251,7 +251,7 @@ def _log_inbound_email(
 # Confirmation email
 # ---------------------------------------------------------------------------
 
-def _send_confirmation(sender_email: str, sender_name: str | None, issue_id: int, subject: str) -> None:
+def _send_confirmation(sender_email: str, sender_name: str | None, ticket_id: int, subject: str) -> None:
     """Send a confirmation email back to the sender."""
     name = sender_name or "there"
     send_email(
@@ -259,7 +259,7 @@ def _send_confirmation(sender_email: str, sender_name: str | None, issue_id: int
         subject=f"Re: {subject or 'Your ticket'}",
         body=(
             f"Hi {name},\n\n"
-            f"Your support ticket has been created (ticket #{issue_id}).\n"
+            f"Your ticket has been created (ticket #{ticket_id}).\n"
             f"Our team will review it and get back to you.\n\n"
             f"Thank you,\nTrueCore Support"
         ),
@@ -393,11 +393,13 @@ def process_inbound_email(payload: dict) -> dict:
         fields = _raw_extract(subject, body_plain)
 
     # 7. Match sender to person
-    reported_by = _match_sender_to_person(instance_id, sender_email)
+    person_match = _match_sender_to_person(instance_id, sender_email)
+    requester_id = person_match["id"] if person_match else None
+    site_id = person_match["site_id"] if person_match else None
 
-    # 8. Create issue
+    # 8. Create ticket
     try:
-        issue_id = _create_issue(instance_id, fields, reported_by)
+        ticket_id = _create_ticket(instance_id, fields, requester_id, site_id)
     except Exception as e:
         _log_inbound_email(
             instance_id=instance_id,
@@ -421,14 +423,14 @@ def process_inbound_email(payload: dict) -> dict:
         body_plain=body_plain,
         from_domain=from_domain,
         status="processed",
-        technical_issue_id=issue_id,
+        ticket_id=ticket_id,
         brevo_message_id=brevo_message_id,
     )
 
     # 10. Send confirmation (best effort)
     try:
-        _send_confirmation(sender_email, sender_name, issue_id, subject)
+        _send_confirmation(sender_email, sender_name, ticket_id, subject)
     except Exception as e:
         logger.warning("Failed to send confirmation email: %s", e)
 
-    return {"status": "processed", "technical_issue_id": issue_id}
+    return {"status": "processed", "ticket_id": ticket_id}

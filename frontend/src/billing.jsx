@@ -106,43 +106,9 @@ export function BillingSection({ currentUser }) {
     if (loading) return <div className="dashboard-management"><div className="dashboard-management-title">Billing</div><p style={{ color: 'var(--text-secondary)' }}>Loading...</p></div>;
     if (!billing) return null;
 
-    const usagePct = billing.query_limit > 0 ? Math.min(100, (billing.query_count / billing.query_limit) * 100) : 0;
-    const resetDate = billing.query_pool_reset_at ? new Date(billing.query_pool_reset_at).toLocaleDateString() : null;
-
     return (
         <div className="dashboard-management">
             <div className="dashboard-management-title">Billing & Subscription</div>
-
-            {/* Plan summary */}
-            <div className="billing-summary">
-                <div className="billing-row">
-                    <span className="billing-label">Plan</span>
-                    <span className="billing-value">{billing.tier === 'paid' ? 'Pro' : 'Free'} - {billing.seat_count} seat{billing.seat_count !== 1 ? 's' : ''} @ $24.99/seat/mo</span>
-                </div>
-                {billing.subscription_status && (
-                    <div className="billing-row">
-                        <span className="billing-label">Status</span>
-                        <span className={`billing-status billing-status-${billing.subscription_status}`}>{billing.subscription_status}</span>
-                    </div>
-                )}
-            </div>
-
-            {/* Query usage */}
-            <div className="billing-usage">
-                <div className="billing-row">
-                    <span className="billing-label">Query Pool</span>
-                    <span className="billing-value">{billing.query_count} / {billing.query_limit} used</span>
-                </div>
-                <div className="billing-usage-bar">
-                    <div className="billing-usage-fill" style={{ width: `${usagePct}%`, background: usagePct > 80 ? '#f87171' : usagePct > 60 ? '#fbbf24' : '#4ade80' }} />
-                </div>
-                <div className="billing-pool-breakdown">
-                    {billing.seat_count} user{billing.seat_count !== 1 ? 's' : ''} x 250 = {billing.base_queries} base
-                    {billing.purchased_queries > 0 && ` + ${billing.purchased_queries} purchased`}
-                    {' '}= {billing.query_limit} total
-                </div>
-                {resetDate && <div className="billing-reset-date">Resets on {resetDate}</div>}
-            </div>
 
             {isOwner && (
                 <div className="billing-actions">

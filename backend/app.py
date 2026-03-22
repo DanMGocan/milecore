@@ -18,6 +18,20 @@ from backend.routes.upload import router as upload_router
 from backend.routes.dashboard import router as dashboard_router
 from backend.routes.billing_routes import router as billing_router
 from backend.routes.inbound_email_routes import router as inbound_email_router
+from backend.routes.reminders_routes import router as reminders_router
+
+
+async def _reminder_check_loop():
+    """Check for due reminders every 60 seconds and send notification emails."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            from backend.reminders import process_due_reminders
+            count = process_due_reminders()
+            if count > 0:
+                print(f"[{datetime.now().isoformat()}] Processed {count} reminder(s).")
+        except Exception as e:
+            print(f"[{datetime.now().isoformat()}] Reminder check error: {e}")
 
 
 async def _daily_report_loop():
@@ -50,9 +64,11 @@ async def _daily_report_loop():
 async def lifespan(app: FastAPI):
     # Initialize connection pool on startup
     init_pool(DATABASE_URL)
-    task = asyncio.create_task(_daily_report_loop())
+    daily_task = asyncio.create_task(_daily_report_loop())
+    reminder_task = asyncio.create_task(_reminder_check_loop())
     yield
-    task.cancel()
+    daily_task.cancel()
+    reminder_task.cancel()
     shutdown_pool()
 
 
@@ -82,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router, prefix="/api")
     app.include_router(billing_router, prefix="/api")
     app.include_router(inbound_email_router, prefix="/api")
+    app.include_router(reminders_router, prefix="/api")
 
     # Serve Vite build output
     frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
