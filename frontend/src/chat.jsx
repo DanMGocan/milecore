@@ -244,19 +244,30 @@ export function ChatPage({ currentUser }) {
         try {
             let messageToSend = text;
             if (fileToUpload) {
+                const isCSV = fileToUpload.name.toLowerCase().endsWith('.csv');
                 const formData = new FormData();
                 formData.append('file', fileToUpload);
-                const uploadRes = await fetch('/api/upload/stage', { method: 'POST', body: formData });
-                const uploadData = await uploadRes.json();
-                if (!uploadRes.ok) throw new Error(uploadData.detail || 'Upload failed');
 
-                const samplePreview = uploadData.sample_rows.map(r => JSON.stringify(r)).join('\n');
-                const stagingSummary = `Import this CSV file (file_id: ${uploadData.file_id}).\n` +
-                    `Filename: ${uploadData.filename}\n` +
-                    `Columns: ${uploadData.headers.join(', ')}\n` +
-                    `Total rows: ${uploadData.total_rows}\n` +
-                    `Sample data:\n${samplePreview}`;
-                messageToSend = text ? `${stagingSummary}\n\nUser note: ${text}` : stagingSummary;
+                if (isCSV) {
+                    const uploadRes = await fetch('/api/upload/stage', { method: 'POST', body: formData });
+                    const uploadData = await uploadRes.json();
+                    if (!uploadRes.ok) throw new Error(uploadData.detail || 'Upload failed');
+
+                    const samplePreview = uploadData.sample_rows.map(r => JSON.stringify(r)).join('\n');
+                    const stagingSummary = `Import this CSV file (file_id: ${uploadData.file_id}).\n` +
+                        `Filename: ${uploadData.filename}\n` +
+                        `Columns: ${uploadData.headers.join(', ')}\n` +
+                        `Total rows: ${uploadData.total_rows}\n` +
+                        `Sample data:\n${samplePreview}`;
+                    messageToSend = text ? `${stagingSummary}\n\nUser note: ${text}` : stagingSummary;
+                } else {
+                    const uploadRes = await fetch('/api/upload/file', { method: 'POST', body: formData });
+                    const uploadData = await uploadRes.json();
+                    if (!uploadRes.ok) throw new Error(uploadData.detail || 'Upload failed');
+
+                    const attachInfo = `[Attached file: ${uploadData.filename} (file_id: ${uploadData.file_id}, type: ${uploadData.content_type})]`;
+                    messageToSend = text ? `${attachInfo}\n\n${text}` : attachInfo;
+                }
             }
 
             const res = await fetch('/api/chat/stream', {
@@ -325,13 +336,15 @@ export function ChatPage({ currentUser }) {
                             cancelAnimationFrame(streamRafRef.current);
                             streamRafRef.current = null;
                         }
+                        const queriesConsumed = data.queries_consumed || 1;
+                        const creditNote = queriesConsumed > 1 ? `\n\n*This query used ${queriesConsumed} credits due to complexity.*` : '';
                         if (!started) {
                             setLoading(false);
-                            setMessages(prev => [...prev, { role: 'assistant', text: assistantText, sql: sqlOps, files, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+                            setMessages(prev => [...prev, { role: 'assistant', text: assistantText + creditNote, sql: sqlOps, files, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
                         } else {
                             setMessages(prev => {
                                 const next = [...prev];
-                                next[next.length - 1] = { ...next[next.length - 1], text: assistantText, sql: sqlOps, files };
+                                next[next.length - 1] = { ...next[next.length - 1], text: assistantText + creditNote, sql: sqlOps, files };
                                 return next;
                             });
                         }
@@ -347,10 +360,13 @@ export function ChatPage({ currentUser }) {
         }
     };
 
+    const ALLOWED_EXTENSIONS = ['.csv', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp', '.tiff', '.tif', '.svg'];
+
     const stageFile = (file) => {
         if (!file) return;
-        if (!file.name.toLowerCase().endsWith('.csv')) {
-            setMessages(prev => [...prev, { role: 'error', text: 'Only CSV files are supported' }]);
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+            setMessages(prev => [...prev, { role: 'error', text: `File type not supported. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}` }]);
             return;
         }
         setPendingFile(file);
@@ -501,7 +517,7 @@ export function ChatPage({ currentUser }) {
                                 className="upload-btn"
                                 onClick={() => fileRef.current && fileRef.current.click()}
                                 disabled={loading}
-                                title="Upload CSV"
+                                title="Attach image"
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
@@ -510,7 +526,7 @@ export function ChatPage({ currentUser }) {
                             <input
                                 ref={fileRef}
                                 type="file"
-                                accept=".csv"
+                                accept=".csv,.jpg,.jpeg,.png,.gif,.webp,.avif,.bmp,.tiff,.tif,.svg"
                                 style={{ display: 'none' }}
                                 onChange={(e) => { stageFile(e.target.files[0]); e.target.value = ''; }}
                             />

@@ -21,6 +21,7 @@ from backend.stripe_billing import (
     toggle_daily_reports_addon,
     toggle_email_addon,
     toggle_inbound_email_addon,
+    toggle_bookings_addon,
 )
 from backend.database import execute_query
 
@@ -123,8 +124,10 @@ async def toggle_addon(body: ToggleAddonBody, ctx: InstanceContext = Depends(get
         result = toggle_daily_reports_addon(ctx.instance_id, body.enable)
     elif body.addon == "inbound_email":
         result = toggle_inbound_email_addon(ctx.instance_id, body.enable)
+    elif body.addon == "bookings":
+        result = toggle_bookings_addon(ctx.instance_id, body.enable)
     else:
-        raise HTTPException(status_code=400, detail="Unknown addon. Use 'email', 'daily_reports', or 'inbound_email'.")
+        raise HTTPException(status_code=400, detail="Unknown addon. Use 'email', 'daily_reports', 'inbound_email', or 'bookings'.")
 
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])

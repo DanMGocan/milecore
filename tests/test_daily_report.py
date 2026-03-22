@@ -60,8 +60,16 @@ def test_addon_enabled_sends(mock_eq, mock_send):
         {"rows": []},
         # _vendor_visits_today
         {"rows": []},
-        # _important_since (5 queries — one per entity type)
-        {"rows": []}, {"rows": []}, {"rows": []}, {"rows": []}, {"rows": []},
+        # _important_since (6 queries — one per entity type)
+        {"rows": []}, {"rows": []}, {"rows": []}, {"rows": []}, {"rows": []}, {"rows": []},
+        # _overdue_work_orders
+        {"rows": []},
+        # _upcoming_maintenance
+        {"rows": []},
+        # _overdue_inspections
+        {"rows": []},
+        # _upcoming_inspections
+        {"rows": []},
         # _set_last_report_time (INSERT/UPSERT)
         {"rowcount": 1, "lastrowid": 1},
     ]

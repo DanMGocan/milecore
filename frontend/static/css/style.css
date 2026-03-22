@@ -1271,26 +1271,6 @@ body {
     box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.delete-row-btn {
-    padding: 2px 8px;
-    background: transparent;
-    border: 1px solid var(--error);
-    color: var(--error);
-    border-radius: 4px;
-    font-size: 11px;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-
-.data-grid tr:hover .delete-row-btn {
-    opacity: 0.6;
-}
-
-.delete-row-btn:hover {
-    opacity: 1 !important;
-    background: rgba(248, 113, 113, 0.1);
-}
 
 /* Pagination */
 .pagination {
@@ -1761,6 +1741,26 @@ select.form-input {
     font-size: 12px;
     color: var(--text-muted);
 }
+
+/* Procurement */
+.procurement-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+}
+.procurement-table-wrap { overflow-x: auto; margin-top: 10px; }
+.procurement-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.procurement-table th { text-align: left; padding: 8px 10px; color: var(--text-secondary); border-bottom: 1px solid var(--border); font-weight: 600; }
+.procurement-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.procurement-table tbody tr:hover { background: var(--bg-tertiary); }
+.procurement-status-badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
+.procurement-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-top: 12px; font-size: 14px; }
+.procurement-timeline { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.procurement-timeline-entry { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 
 /* Reminders */
 .reminders-list {
@@ -2976,10 +2976,6 @@ select.form-input {
         max-width: 600px;
     }
 
-    .delete-row-btn {
-        opacity: 0.6;
-    }
-
     /* --- Navbar hamburger --- */
     .nav-hamburger {
         display: flex;
@@ -3481,6 +3477,32 @@ select.form-input {
     margin: 0;
 }
 
+/* Enterprise tier card */
+.billing-enterprise {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    padding: 12px;
+    border-top: 2px solid var(--accent);
+}
+
+.billing-enterprise-benefits {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 12px;
+}
+
+.billing-enterprise-benefits li {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 4px 0;
+}
+
+.billing-enterprise-benefits li::before {
+    content: "\2713 ";
+    color: var(--accent);
+    font-weight: 600;
+}
+
 /* Toggle switch */
 .billing-toggle {
     position: relative;
@@ -3583,4 +3605,64 @@ select.form-input {
     font-size: 10px;
     color: var(--text-muted);
     margin-top: 2px;
+}
+
+/* === Admin Dashboard === */
+.admin-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+}
+
+.admin-tab {
+    padding: 8px 18px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-family: var(--font-sans);
+}
+
+.admin-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.admin-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.admin-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.admin-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.admin-table tbody tr:hover {
+    background: var(--bg-hover);
 }

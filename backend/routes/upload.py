@@ -3,17 +3,26 @@ import io
 import json
 import os
 import re
+import tempfile
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from backend.auth import InstanceContext, get_current_instance
+from backend.config import (
+    TICKET_ATTACHMENT_ALLOWED_TYPES,
+    TICKET_ATTACHMENT_MAX_SIZE_MB,
+)
 from backend.database import execute_query, get_tables
 
 router = APIRouter()
 
 TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Local metadata dir for chat attachment file_id → S3 key resolution
+_META_DIR = os.path.join(TEMP_DIR, "chat_meta")
+os.makedirs(_META_DIR, exist_ok=True)
 
 
 def _staged_path(file_id: str) -> str:
@@ -224,4 +233,87 @@ async def upload_csv(file: UploadFile = File(...), table_name: str | None = None
         "table": table_name,
         "rows_inserted": inserted,
         "errors": errors,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Image upload (S3 + AVIF conversion) for chat attachments
+# ---------------------------------------------------------------------------
+
+def get_chat_attachment_path(file_id: str, instance_id: int) -> dict | None:
+    """Resolve a chat attachment file_id to its S3 metadata.
+
+    Returns dict with s3_key, filename, content_type or None if not found.
+    """
+    meta_path = os.path.join(_META_DIR, f"{file_id}.json")
+    if not os.path.isfile(meta_path):
+        return None
+    with open(meta_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def resolve_s3_attachment_for_email(file_id: str, instance_id: int) -> dict | None:
+    """Download an S3 chat attachment to a temp file for email sending.
+
+    Returns dict with path (temp file), filename, content_type or None.
+    """
+    from backend.s3_storage import download_image
+
+    meta = get_chat_attachment_path(file_id, instance_id)
+    if not meta or not meta.get("s3_key"):
+        return None
+
+    data, ct = download_image(meta["s3_key"])
+    ext = meta["s3_key"].rsplit(".", 1)[-1] if "." in meta["s3_key"] else "avif"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}", dir=TEMP_DIR)
+    tmp.write(data)
+    tmp.close()
+
+    return {
+        "path": tmp.name,
+        "filename": meta.get("filename", f"image.{ext}"),
+        "content_type": ct,
+    }
+
+
+@router.post("/upload/file")
+async def upload_file(file: UploadFile = File(...), ctx: InstanceContext = Depends(get_current_instance)):
+    """Upload an image for attaching to emails or tickets. Converted to AVIF and stored in S3."""
+    if not file.content_type or file.content_type not in TICKET_ATTACHMENT_ALLOWED_TYPES:
+        allowed = ", ".join(TICKET_ATTACHMENT_ALLOWED_TYPES)
+        raise HTTPException(status_code=400, detail=f"File type '{file.content_type}' not allowed. Allowed: {allowed}")
+
+    content = await file.read()
+    max_bytes = TICKET_ATTACHMENT_MAX_SIZE_MB * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=400, detail=f"File too large. Maximum size is {TICKET_ATTACHMENT_MAX_SIZE_MB} MB")
+
+    from backend.s3_storage import upload_chat_image
+
+    file_id = str(uuid.uuid4())
+    original_filename = file.filename or "image"
+
+    result = upload_chat_image(
+        instance_id=ctx.instance_id,
+        file_id=file_id,
+        image_bytes=content,
+        original_filename=original_filename,
+        content_type=file.content_type,
+    )
+
+    # Save metadata locally for file_id resolution
+    meta = {
+        "s3_key": result["s3_key"],
+        "filename": original_filename,
+        "content_type": result["content_type"],
+        "file_size_bytes": result["file_size_bytes"],
+    }
+    with open(os.path.join(_META_DIR, f"{file_id}.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f)
+
+    return {
+        "file_id": file_id,
+        "filename": original_filename,
+        "content_type": result["content_type"],
+        "file_size_bytes": result["file_size_bytes"],
     }

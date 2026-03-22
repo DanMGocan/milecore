@@ -1,5 +1,7 @@
 import io
 import json
+import math
+import os
 import re
 import time
 import uuid
@@ -9,15 +11,20 @@ from typing import Any, Generator
 import anthropic
 from openpyxl import Workbook
 
+from collections import defaultdict
+
 from backend.config import (
     ANTHROPIC_API_KEY,
     ANTHROPIC_API_KEY_SPARE,
     CLAUDE_MODEL,
     BREVO_SENDER_EMAIL,
     BREVO_SENDER_NAME,
+    EMAIL_RATE_LIMIT_PER_HOUR,
+    QUERY_TOKEN_THRESHOLD,
 )
 from backend.database import execute_query, get_home_site, get_schema_ddl, validate_query
 from backend.email_sender import send_email as smtp_send_email
+from backend.routes.upload import get_chat_attachment_path, resolve_s3_attachment_for_email
 from backend.prompts import SYSTEM_TEMPLATE, TOOLS
 
 _TABLE_RE = re.compile(
@@ -66,6 +73,23 @@ def _swap_to_spare() -> bool:
 _generated_files: dict[str, tuple[str, bytes, float]] = {}
 _MAX_GENERATED_FILES = 100
 _FILE_TTL_SECONDS = 3600  # 1 hour
+
+# Email rate limiting: per-instance send timestamps
+_email_send_times: dict[int, list[float]] = defaultdict(list)
+
+
+def _check_email_rate_limit(instance_id: int) -> bool:
+    """Return True if under the rate limit, False if exceeded."""
+    now = time.time()
+    window = 3600  # 1 hour
+    times = _email_send_times[instance_id]
+    _email_send_times[instance_id] = [t for t in times if now - t < window]
+    return len(_email_send_times[instance_id]) < EMAIL_RATE_LIMIT_PER_HOUR
+
+
+def _record_email_send(instance_id: int) -> None:
+    """Record that an email was sent for rate limiting."""
+    _email_send_times[instance_id].append(time.time())
 
 
 def _cleanup_generated_files() -> None:
@@ -151,6 +175,22 @@ def _build_user_role_section(user_role: str) -> str:
     )
 
 
+_PROMPT_SECTION_RE = re.compile(
+    r"(INSTRUCTIONS|SYSTEM|USER ROLE|CURRENT USER|CRITICAL|SCHEMA|IMPORTANT|FORMATTING|TABLE GUIDE)",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_profile_field(value: str | None, max_len: int = 100) -> str:
+    """Sanitize a user-editable profile field before inserting into the system prompt."""
+    if not value:
+        return "not set"
+    s = str(value)[:max_len]
+    s = s.replace("\n", " ").replace("\r", " ")
+    s = _PROMPT_SECTION_RE.sub("", s)
+    return s.strip() or "not set"
+
+
 def _build_current_user_section(current_user: dict[str, Any] | None) -> str:
     if not current_user:
         return (
@@ -161,17 +201,17 @@ def _build_current_user_section(current_user: dict[str, Any] | None) -> str:
     lines = [
         "CURRENT USER:",
         f"- person_id: {current_user['person_id']}",
-        f"- name: {current_user['display_name']}",
-        f"- username: {current_user['username']}",
+        f"- name: {_sanitize_profile_field(current_user['display_name'])}",
+        f"- username: {_sanitize_profile_field(current_user['username'])}",
         f"- role: {current_user['role']}",
-        f"- email: {current_user['email'] or 'not set'}",
-        f"- phone: {current_user['phone'] or 'not set'}",
-        f"- title: {current_user['role_title'] or 'not set'}",
-        f"- department: {current_user['department'] or 'not set'}",
+        f"- email: {_sanitize_profile_field(current_user['email'])}",
+        f"- phone: {_sanitize_profile_field(current_user['phone'])}",
+        f"- title: {_sanitize_profile_field(current_user['role_title'])}",
+        f"- department: {_sanitize_profile_field(current_user['department'])}",
         f"- site_id: {current_user['site_id'] if current_user['site_id'] is not None else 'not set'}",
-        f"- site_name: {current_user['site_name'] or 'not set'}",
+        f"- site_name: {_sanitize_profile_field(current_user['site_name'])}",
         f"- team_id: {current_user['team_id'] if current_user['team_id'] is not None else 'not set'}",
-        f"- team_name: {current_user['team_name'] or 'not set'}",
+        f"- team_name: {_sanitize_profile_field(current_user['team_name'])}",
     ]
     return "\n".join(lines)
 
@@ -480,21 +520,50 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
                 continue
 
+            # Rate limit check
+            if not _check_email_rate_limit(instance_id):
+                result = {"error": f"Email rate limit exceeded. Maximum {EMAIL_RATE_LIMIT_PER_HOUR} emails per hour per instance. Please try again later."}
+                sql_log.append({"tool": "send_email", "action": f"Email to {inp['to_email']}: {inp['subject']} (rate limited)", "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
+
             # Append email signature if set
             body = inp["body"]
             if addon_check.get("rows") and addon_check["rows"][0].get("email_signature"):
                 body = body + "\n\n" + addon_check["rows"][0]["email_signature"]
+
+            # Resolve file attachments if provided (download from S3 to temp)
+            email_attachments = None
+            temp_files = []
+            file_ids = inp.get("attachment_file_ids") or []
+            if file_ids:
+                email_attachments = []
+                for fid in file_ids:
+                    resolved = resolve_s3_attachment_for_email(fid, instance_id)
+                    if resolved:
+                        email_attachments.append(resolved)
+                        temp_files.append(resolved["path"])
 
             result = smtp_send_email(
                 to_email=inp["to_email"],
                 subject=inp["subject"],
                 body=body,
                 to_name=inp.get("to_name", ""),
+                attachments=email_attachments,
             )
+            _record_email_send(instance_id)
 
+            # Clean up temp files
+            for tf in temp_files:
+                try:
+                    os.remove(tf)
+                except OSError:
+                    pass
+
+            att_note = f" (+{len(email_attachments)} attachment(s))" if email_attachments else ""
             sql_log.append({
                 "tool": "send_email",
-                "action": f"Email to {inp['to_email']}: {inp['subject']}",
+                "action": f"Email to {inp['to_email']}: {inp['subject']}{att_note}",
                 "result": result,
             })
 
@@ -726,6 +795,195 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                 "content": json.dumps(result),
             })
 
+        elif tool_name == "reply_to_ticket":
+            inp = block["input"]
+            ticket_id = inp["ticket_id"]
+            reply_body = inp["body"]
+            update_status = inp.get("update_status")
+
+            # Check email addon
+            addon_check = execute_query(
+                "SELECT email_addon, email_signature, inbound_email_addon FROM instances WHERE id = ?",
+                [instance_id],
+                instance_id=None,
+            )
+            if addon_check.get("rows") and not addon_check["rows"][0].get("email_addon"):
+                result = {"error": "Email addon is not enabled for this instance."}
+                sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id}", "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
+
+            # Rate limit
+            if not _check_email_rate_limit(instance_id):
+                result = {"error": f"Email rate limit exceeded ({EMAIL_RATE_LIMIT_PER_HOUR}/hr)."}
+                sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id} (rate limited)", "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
+
+            # Look up ticket
+            ticket_row = execute_query(
+                "SELECT t.id, t.title, t.status, t.email_thread_id, t.requester_person_id, "
+                "p.email AS requester_email, p.first_name AS requester_name "
+                "FROM tickets t LEFT JOIN people p ON t.requester_person_id = p.id AND p.instance_id = t.instance_id "
+                "WHERE t.id = ? AND t.instance_id = ?",
+                [ticket_id, instance_id],
+                instance_id=instance_id,
+            )
+            if not ticket_row.get("rows"):
+                result = {"error": f"Ticket #{ticket_id} not found."}
+                sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id}", "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
+
+            ticket = ticket_row["rows"][0]
+            requester_email = ticket.get("requester_email")
+            if not requester_email:
+                result = {"error": f"Ticket #{ticket_id} has no requester email on file."}
+                sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id}", "result": result})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                continue
+
+            # Gather watchers
+            watchers = execute_query(
+                "SELECT p.email FROM ticket_watchers tw "
+                "JOIN people p ON tw.person_id = p.id AND p.instance_id = tw.instance_id "
+                "WHERE tw.ticket_id = ? AND tw.instance_id = ? AND p.email IS NOT NULL",
+                [ticket_id, instance_id],
+                instance_id=instance_id,
+            )
+            cc_emails = [w["email"] for w in (watchers.get("rows") or []) if w.get("email")]
+
+            # Append email signature
+            body = reply_body
+            inst_row = addon_check.get("rows", [{}])[0]
+            if inst_row.get("email_signature"):
+                body = body + "\n\n" + inst_row["email_signature"]
+
+            # Resolve attachments (download from S3 to temp for email)
+            email_attachments = None
+            temp_files = []
+            file_ids = inp.get("attachment_file_ids") or []
+            if file_ids:
+                email_attachments = []
+                for fid in file_ids:
+                    resolved = resolve_s3_attachment_for_email(fid, instance_id)
+                    if resolved:
+                        email_attachments.append(resolved)
+                        temp_files.append(resolved["path"])
+
+            # Build threading headers
+            from backend.config import INBOUND_EMAIL_DOMAIN
+            thread_id = ticket.get("email_thread_id") or ""
+            slug_row = execute_query(
+                "SELECT slug FROM instances WHERE id = ?", [instance_id], instance_id=None,
+            )
+            slug = slug_row["rows"][0]["slug"] if slug_row.get("rows") else "unknown"
+            reply_to_addr = f"{slug}+{ticket_id}@{INBOUND_EMAIL_DOMAIN}"
+
+            email_result = smtp_send_email(
+                to_email=requester_email,
+                subject=f"Re: [Ticket #{ticket_id}] {ticket.get('title', '')}",
+                body=body,
+                to_name=ticket.get("requester_name", ""),
+                reply_to_address=reply_to_addr,
+                in_reply_to=thread_id,
+                references=thread_id,
+                cc_emails=cc_emails if cc_emails else None,
+                attachments=email_attachments,
+            )
+            _record_email_send(instance_id)
+
+            # Record reply
+            execute_query(
+                "INSERT INTO ticket_replies (instance_id, ticket_id, reply_body, reply_by_person_id, "
+                "reply_to_email, direction) VALUES (?, ?, ?, ?, ?, 'outbound')",
+                [instance_id, ticket_id, reply_body, person_id, requester_email],
+                instance_id=instance_id,
+            )
+
+            # Timeline entry
+            execute_query(
+                "INSERT INTO ticket_timeline (instance_id, ticket_id, event_type, actor_person_id, "
+                "detail) VALUES (?, ?, 'replied', ?, ?)",
+                [instance_id, ticket_id, person_id, reply_body[:200]],
+                instance_id=instance_id,
+            )
+
+            # Save attachments to ticket_attachments via S3
+            if file_ids:
+                from backend.s3_storage import upload_image as s3_upload_image
+                for fid in file_ids:
+                    chat_meta = get_chat_attachment_path(fid, instance_id)
+                    if not chat_meta or not chat_meta.get("s3_key"):
+                        continue
+                    # Re-download from chat S3 path and re-upload to ticket path
+                    from backend.s3_storage import download_image as s3_download
+                    img_data, img_ct = s3_download(chat_meta["s3_key"])
+                    s3_result = s3_upload_image(
+                        instance_id=instance_id,
+                        ticket_id=ticket_id,
+                        file_id=fid,
+                        image_bytes=img_data,
+                        original_filename=chat_meta.get("filename", "image"),
+                        content_type=img_ct,
+                    )
+                    execute_query(
+                        "INSERT INTO ticket_attachments (instance_id, ticket_id, filename, original_filename, "
+                        "content_type, file_size_bytes, storage_path, uploaded_by_person_id) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [instance_id, ticket_id, os.path.basename(s3_result["s3_key"]),
+                         chat_meta.get("filename", "image"), s3_result["content_type"],
+                         s3_result["file_size_bytes"], s3_result["s3_key"], person_id],
+                        instance_id=instance_id,
+                    )
+                    execute_query(
+                        "INSERT INTO ticket_timeline (instance_id, ticket_id, event_type, actor_person_id, "
+                        "detail) VALUES (?, ?, 'attachment_added', ?, ?)",
+                        [instance_id, ticket_id, person_id, chat_meta.get("filename", "image")],
+                        instance_id=instance_id,
+                    )
+
+            # Clean up temp files from email attachments
+            for tf in temp_files:
+                try:
+                    os.remove(tf)
+                except OSError:
+                    pass
+
+            # Optionally update status
+            if update_status and update_status != ticket.get("status"):
+                old_status = ticket.get("status", "open")
+                execute_query(
+                    "UPDATE tickets SET status = ? WHERE id = ? AND instance_id = ?",
+                    [update_status, ticket_id, instance_id],
+                    instance_id=instance_id,
+                )
+                execute_query(
+                    "INSERT INTO ticket_timeline (instance_id, ticket_id, event_type, actor_person_id, "
+                    "old_value, new_value) VALUES (?, ?, 'status_changed', ?, ?, ?)",
+                    [instance_id, ticket_id, person_id, old_status, update_status],
+                    instance_id=instance_id,
+                )
+
+            cc_note = f" (CC: {', '.join(cc_emails)})" if cc_emails else ""
+            att_note = f" (+{len(email_attachments)} attachment(s))" if email_attachments else ""
+            result = {
+                "success": True,
+                "message": f"Reply sent to {requester_email}{cc_note}{att_note}",
+                "email_result": email_result,
+            }
+
+            sql_log.append({
+                "tool": "reply_to_ticket",
+                "action": f"Reply to ticket #{ticket_id} → {requester_email}{cc_note}{att_note}",
+                "result": result,
+            })
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block["id"],
+                "content": json.dumps(result),
+            })
+
     return tool_results
 
 
@@ -756,6 +1014,17 @@ def _increment_query_count(instance_id: int) -> dict | None:
     return None
 
 
+def _charge_extra_queries(instance_id: int, extra: int) -> None:
+    """Charge additional queries for token-heavy requests (fire-and-forget)."""
+    if extra <= 0:
+        return
+    execute_query(
+        "UPDATE instances SET query_count = query_count + ? WHERE id = ?",
+        [extra, instance_id],
+        instance_id=None,
+    )
+
+
 def chat_stream(
     user_message: str,
     history: list[dict[str, Any]],
@@ -779,6 +1048,9 @@ def chat_stream(
     system_prompt = _build_system_prompt(user_role, current_user, instance_id=instance_id)
     messages = list(history) + [{"role": "user", "content": user_message}]
     sql_log: list[dict[str, Any]] = []
+    total_input_tokens = 0
+    total_output_tokens = 0
+    api_calls = 0
 
     while True:
         try:
@@ -798,12 +1070,25 @@ def chat_stream(
                 continue
             raise exc
 
+        api_calls += 1
+        total_input_tokens += response.usage.input_tokens
+        total_output_tokens += response.usage.output_tokens
         assistant_content = _build_content(response)
         messages.append({"role": "assistant", "content": assistant_content})
 
         if response.stop_reason == "end_turn":
             state["history"] = messages
-            yield f"event: done\ndata: {json.dumps({'sql_executed': sql_log})}\n\n"
+            total_tokens = total_input_tokens + total_output_tokens
+            queries_consumed = max(1, math.ceil(total_tokens / QUERY_TOKEN_THRESHOLD))
+            extra = queries_consumed - 1
+            if extra > 0:
+                _charge_extra_queries(instance_id, extra)
+            execute_query(
+                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?)",
+                [instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed],
+                instance_id=None,
+            )
+            yield f"event: done\ndata: {json.dumps({'sql_executed': sql_log, 'tokens_used': total_tokens, 'queries_consumed': queries_consumed})}\n\n"
             return
 
         if response.stop_reason == "tool_use":
@@ -841,6 +1126,9 @@ def chat(
     system_prompt = _build_system_prompt(user_role, current_user, instance_id=instance_id)
     messages = list(history) + [{"role": "user", "content": user_message}]
     sql_log: list[dict[str, Any]] = []
+    total_input_tokens = 0
+    total_output_tokens = 0
+    api_calls = 0
 
     while True:
         try:
@@ -856,15 +1144,30 @@ def chat(
                 continue
             raise exc
 
+        api_calls += 1
+        total_input_tokens += response.usage.input_tokens
+        total_output_tokens += response.usage.output_tokens
         assistant_content = _build_content(response)
         messages.append({"role": "assistant", "content": assistant_content})
 
         if response.stop_reason == "end_turn":
             text_parts = [b["text"] for b in assistant_content if b["type"] == "text"]
+            total_tokens = total_input_tokens + total_output_tokens
+            queries_consumed = max(1, math.ceil(total_tokens / QUERY_TOKEN_THRESHOLD))
+            extra = queries_consumed - 1
+            if extra > 0:
+                _charge_extra_queries(instance_id, extra)
+            execute_query(
+                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?)",
+                [instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed],
+                instance_id=None,
+            )
             return {
                 "response": "\n".join(text_parts),
                 "sql_executed": sql_log,
                 "history": messages,
+                "tokens_used": total_tokens,
+                "queries_consumed": queries_consumed,
             }
 
         if response.stop_reason == "tool_use":

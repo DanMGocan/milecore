@@ -193,6 +193,39 @@ export function BillingSection({ currentUser }) {
                             Control who can submit tickets via the sender whitelist.
                         </p>
                     </div>
+
+                    <div className="billing-addon">
+                        <div className="billing-addon-header">
+                            <div className="billing-addon-info">
+                                <span className="billing-addon-name">Bookings Addon</span>
+                                <span className="billing-addon-price">$4.99/mo</span>
+                            </div>
+                            <label className="billing-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={billing.bookings_addon}
+                                    disabled={toggling === 'bookings'}
+                                    onChange={e => handleToggleAddon('bookings', e.target.checked)}
+                                />
+                                <span className="billing-toggle-slider" />
+                            </label>
+                        </div>
+                        <p className="billing-addon-desc">
+                            Book rooms, desks, parking spaces, lockers, and assets through chat or email.
+                            Users can send booking requests to book-{billing.slug}@tickets.truecore.cloud.
+                            Includes conflict detection, availability checking, and AV support notifications.
+                        </p>
+                    </div>
+                    <div className="billing-enterprise">
+                        <div className="billing-addon-info">
+                            <span className="billing-addon-name">Enterprise</span>
+                        </div>
+                        <ul className="billing-enterprise-benefits">
+                            <li>Custom database</li>
+                            <li>Separation of database on own instance</li>
+                        </ul>
+                        <a href="mailto:gocandan@gmail.com" className="btn btn-primary btn-sm">Contact Us</a>
+                    </div>
                 </div>
             )}
 

@@ -43,3 +43,26 @@ def mock_smtp_config():
          patch("backend.email_sender.BREVO_SMTP_HOST", "smtp.test.com"), \
          patch("backend.email_sender.BREVO_SMTP_PORT", 587):
         yield
+
+
+@pytest.fixture
+def mock_ticket_attachments_dir(tmp_path):
+    """Patch TICKET_ATTACHMENTS_DIR to a temp directory."""
+    with patch("backend.config.TICKET_ATTACHMENTS_DIR", str(tmp_path / "ticket_attachments")):
+        yield tmp_path / "ticket_attachments"
+
+
+@pytest.fixture
+def mock_chat_attachments_dir(tmp_path):
+    """Patch CHAT_ATTACHMENTS_DIR to a temp directory."""
+    with patch("backend.config.CHAT_ATTACHMENTS_DIR", str(tmp_path / "chat_attachments")):
+        yield tmp_path / "chat_attachments"
+
+
+@pytest.fixture
+def mock_s3_client():
+    """Patch the S3 client singleton in s3_storage."""
+    from unittest.mock import MagicMock
+    mock_client = MagicMock()
+    with patch("backend.s3_storage._s3_client", mock_client):
+        yield mock_client

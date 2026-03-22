@@ -31,6 +31,7 @@ BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "")
 
 DAILY_REPORT_HOUR = int(os.getenv("DAILY_REPORT_HOUR", "7"))
 DAILY_REPORT_MINUTE = int(os.getenv("DAILY_REPORT_MINUTE", "0"))
+MAINTENANCE_CHECK_INTERVAL_SECONDS = int(os.getenv("MAINTENANCE_CHECK_INTERVAL_SECONDS", "300"))
 
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",")]
 
@@ -44,9 +45,36 @@ STRIPE_PRICE_EMAIL_ADDON = os.getenv("STRIPE_PRICE_EMAIL_ADDON", "")
 STRIPE_PRICE_DAILY_REPORTS_ADDON = os.getenv("STRIPE_PRICE_DAILY_REPORTS_ADDON", "")
 STRIPE_PRICE_QUERY_PACK = os.getenv("STRIPE_PRICE_QUERY_PACK", "")
 STRIPE_PRICE_INBOUND_EMAIL_ADDON = os.getenv("STRIPE_PRICE_INBOUND_EMAIL_ADDON", "")
+STRIPE_PRICE_BOOKINGS_ADDON = os.getenv("STRIPE_PRICE_BOOKINGS_ADDON", "")
 
 # Inbound Email
 BREVO_INBOUND_WEBHOOK_SECRET = os.getenv("BREVO_INBOUND_WEBHOOK_SECRET", "")
 INBOUND_EMAIL_RATE_LIMIT_PER_SENDER = int(os.getenv("INBOUND_EMAIL_RATE_LIMIT_PER_SENDER", "20"))
 INBOUND_EMAIL_RATE_LIMIT_WINDOW_MINUTES = int(os.getenv("INBOUND_EMAIL_RATE_LIMIT_WINDOW_MINUTES", "60"))
 INBOUND_EMAIL_DOMAIN = os.getenv("INBOUND_EMAIL_DOMAIN", "tickets.truecore.cloud")
+INBOUND_BOOKING_EMAIL_PREFIX = os.getenv("INBOUND_BOOKING_EMAIL_PREFIX", "book-")
+
+# Token-based query metering
+QUERY_TOKEN_THRESHOLD = int(os.getenv("QUERY_TOKEN_THRESHOLD", "80000"))
+
+# Email rate limiting (outbound via chat tool)
+EMAIL_RATE_LIMIT_PER_HOUR = int(os.getenv("EMAIL_RATE_LIMIT_PER_HOUR", "20"))
+
+# S3-compatible Object Storage
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "")
+S3_BUCKET = os.getenv("S3_BUCKET", "truecore-attachments")
+S3_REGION = os.getenv("S3_REGION", "nbg1")
+
+# Attachments (images only — stored in S3)
+TICKET_ATTACHMENTS_DIR = os.getenv("TICKET_ATTACHMENTS_DIR", "ticket_attachments")
+CHAT_ATTACHMENTS_DIR = os.getenv("CHAT_ATTACHMENTS_DIR", "chat_attachments")
+TICKET_ATTACHMENT_MAX_SIZE_MB = int(os.getenv("TICKET_ATTACHMENT_MAX_SIZE_MB", "25"))
+TICKET_ATTACHMENT_ALLOWED_TYPES = os.getenv(
+    "TICKET_ATTACHMENT_ALLOWED_TYPES",
+    "image/jpeg,image/png,image/gif,image/webp,image/avif,image/bmp,image/tiff,image/svg+xml",
+).split(",")
+
+# Platform admin
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "gocandan@gmail.com")

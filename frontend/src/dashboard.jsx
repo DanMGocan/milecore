@@ -19,6 +19,14 @@ const CARD_ACCENTS = {
     'Open Issues': '#f87171',
     'Events This Week': '#fbbf24',
     'Flagged Important': '#a78bfa',
+    'Active Work Orders': '#38bdf8',
+    'Overdue Work Orders': '#f87171',
+    'Deployed': '#34d399',
+    'Spare': '#fbbf24',
+    'In Repair': '#fb923c',
+    'Critical Assets': '#ef4444',
+    'Warranty Expiring': '#f97316',
+    'Licenses Expiring': '#e879f9',
 };
 
 function StatCard({ label, value, accent }) {
@@ -206,6 +214,232 @@ function UserCard({ user, currentUser, onRoleChange, onRemove, onMottoSaved }) {
     );
 }
 
+const PROCUREMENT_STATUS_COLORS = {
+    pending: '#fbbf24',
+    approved: '#4ade80',
+    ordered: '#6c8cff',
+    received: '#4ade80',
+    cancelled: '#6b7084',
+};
+
+function ProcurementSection() {
+    const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [selected, setSelected] = useState(null);
+    const [filterStatus, setFilterStatus] = useState('');
+    const [form, setForm] = useState({ item_description: '', value: '', brand: '', model: '', vendor: '', notes: '' });
+    const [newNote, setNewNote] = useState('');
+    const [statusChange, setStatusChange] = useState('');
+
+    const loadRequests = () => {
+        const url = filterStatus ? `/api/procurement?status=${filterStatus}` : '/api/procurement';
+        fetch(url, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => { setRequests(Array.isArray(d) ? d : []); setLoading(false); })
+            .catch(() => setLoading(false));
+    };
+
+    useEffect(() => { loadRequests(); }, [filterStatus]);
+
+    const loadDetail = (id) => {
+        fetch(`/api/procurement/${id}`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(d => { setSelected(d); setStatusChange(''); setNewNote(''); })
+            .catch(console.error);
+    };
+
+    const submitRequest = async () => {
+        if (!form.item_description.trim()) return alert('Item description is required');
+        const payload = { ...form, value: form.value ? parseFloat(form.value) : null };
+        if (!payload.brand) delete payload.brand;
+        if (!payload.model) delete payload.model;
+        if (!payload.vendor) delete payload.vendor;
+        if (!payload.notes) delete payload.notes;
+        const res = await fetch('/api/procurement', {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.id) {
+            setShowForm(false);
+            setForm({ item_description: '', value: '', brand: '', model: '', vendor: '', notes: '' });
+            loadRequests();
+        } else {
+            alert(data.detail || 'Failed to create request');
+        }
+    };
+
+    const updateStatus = async () => {
+        if (!statusChange || !selected) return;
+        const res = await fetch(`/api/procurement/${selected.id}`, {
+            method: 'PATCH', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: statusChange }),
+        });
+        const data = await res.json();
+        if (data.success) { loadDetail(selected.id); loadRequests(); }
+        else alert(data.detail || 'Failed to update status');
+    };
+
+    const addNote = async () => {
+        if (!newNote.trim() || !selected) return;
+        const res = await fetch(`/api/procurement/${selected.id}/updates`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: newNote }),
+        });
+        const data = await res.json();
+        if (data.success) { setNewNote(''); loadDetail(selected.id); }
+        else alert(data.detail || 'Failed to add note');
+    };
+
+    const formatDate = (iso) => {
+        if (!iso) return '';
+        return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+
+    const formatCurrency = (val) => {
+        if (val == null) return '\u2014';
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(val);
+    };
+
+    if (selected) {
+        return (
+            <div className="dashboard-management">
+                <div className="dashboard-management-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button className="btn btn-sm" onClick={() => setSelected(null)}>&larr; Back</button>
+                    Purchase Request #{selected.id}
+                    <span className="procurement-status-badge" style={{ background: `${PROCUREMENT_STATUS_COLORS[selected.status] || '#6b7084'}22`, color: PROCUREMENT_STATUS_COLORS[selected.status] || '#6b7084' }}>
+                        {selected.status}
+                    </span>
+                </div>
+
+                <div className="procurement-detail-grid">
+                    <div><strong>Item:</strong> {selected.item_description}</div>
+                    <div><strong>Value:</strong> {formatCurrency(selected.value)}</div>
+                    <div><strong>Brand:</strong> {selected.brand || '\u2014'}</div>
+                    <div><strong>Model:</strong> {selected.model || '\u2014'}</div>
+                    <div><strong>Vendor:</strong> {selected.vendor || '\u2014'}</div>
+                    <div><strong>Requested by:</strong> {selected.requested_by_name}</div>
+                    {selected.reviewed_by_name && <div><strong>Reviewed by:</strong> {selected.reviewed_by_name} on {formatDate(selected.reviewed_at)}</div>}
+                    {selected.notes && <div style={{ gridColumn: '1 / -1' }}><strong>Notes:</strong> {selected.notes}</div>}
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center' }}>
+                    <select className="form-input" style={{ width: 'auto' }} value={statusChange} onChange={e => setStatusChange(e.target.value)}>
+                        <option value="">Change status...</option>
+                        {selected.status === 'pending' && <><option value="approved">Approve</option><option value="cancelled">Cancel</option></>}
+                        {selected.status === 'approved' && <><option value="ordered">Mark Ordered</option><option value="cancelled">Cancel</option></>}
+                        {selected.status === 'ordered' && <><option value="received">Mark Received</option><option value="cancelled">Cancel</option></>}
+                        {selected.status === 'cancelled' && <option value="pending">Re-open</option>}
+                    </select>
+                    {statusChange && <button className="btn btn-sm btn-primary" onClick={updateStatus}>Update</button>}
+                </div>
+
+                <div style={{ marginTop: 20 }}>
+                    <strong>Updates</strong>
+                    <div className="procurement-timeline">
+                        {(selected.updates || []).map(u => (
+                            <div key={u.id} className="procurement-timeline-entry">
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{formatDate(u.created_at)}</span>
+                                <span style={{ fontSize: 13 }}>
+                                    <strong>{u.author_name}</strong>{' '}
+                                    {u.event_type === 'created' && 'created the request'}
+                                    {u.event_type === 'status_changed' && <>changed status from <em>{u.old_value}</em> to <em>{u.new_value}</em></>}
+                                    {u.event_type === 'value_changed' && <>changed value from {u.old_value} to {u.new_value}</>}
+                                    {u.event_type === 'vendor_changed' && <>changed vendor from "{u.old_value}" to "{u.new_value}"</>}
+                                    {u.event_type === 'note_added' && <span>{u.note}</span>}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                        <input className="form-input" style={{ flex: 1 }} placeholder="Add a note..." value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => e.key === 'Enter' && addNote()} />
+                        <button className="btn btn-sm btn-primary" onClick={addNote}>Add Note</button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="dashboard-management">
+            <div className="dashboard-management-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                Purchase Requests
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <select className="form-input" style={{ width: 'auto', fontSize: 13 }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                        <option value="">All statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="ordered">Ordered</option>
+                        <option value="received">Received</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <button className="btn btn-sm btn-primary" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? 'Cancel' : '+ New Request'}
+                    </button>
+                </div>
+            </div>
+
+            {showForm && (
+                <div className="procurement-form">
+                    <input className="form-input" placeholder="Item description *" value={form.item_description} onChange={e => setForm({ ...form, item_description: e.target.value })} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <input className="form-input" placeholder="Value" type="number" step="0.01" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} />
+                        <input className="form-input" placeholder="Vendor" value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} />
+                        <input className="form-input" placeholder="Brand" value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} />
+                        <input className="form-input" placeholder="Model" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} />
+                    </div>
+                    <textarea className="form-input" placeholder="Notes (what is this for, justification, etc.)" rows={3} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+                    <button className="btn btn-primary" onClick={submitRequest}>Submit Request</button>
+                </div>
+            )}
+
+            {loading ? (
+                <div className="dashboard-management-hint">Loading...</div>
+            ) : requests.length === 0 ? (
+                <div className="dashboard-management-hint">
+                    No purchase requests yet. Click "+ New Request" to create one.
+                </div>
+            ) : (
+                <div className="procurement-table-wrap">
+                    <table className="procurement-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Value</th>
+                                <th>Vendor</th>
+                                <th>Requested By</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {requests.map(r => (
+                                <tr key={r.id} onClick={() => loadDetail(r.id)} style={{ cursor: 'pointer' }}>
+                                    <td>{r.item_description}</td>
+                                    <td>{formatCurrency(r.value)}</td>
+                                    <td>{r.vendor || '\u2014'}</td>
+                                    <td>{r.requested_by_name}</td>
+                                    <td>
+                                        <span className="procurement-status-badge" style={{ background: `${PROCUREMENT_STATUS_COLORS[r.status] || '#6b7084'}22`, color: PROCUREMENT_STATUS_COLORS[r.status] || '#6b7084' }}>
+                                            {r.status}
+                                        </span>
+                                    </td>
+                                    <td>{formatDate(r.created_at)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function DashboardPage({ currentUser }) {
     const [overview, setOverview] = useState(null);
     const [assets, setAssets] = useState([]);
@@ -343,6 +577,14 @@ export function DashboardPage({ currentUser }) {
                 <StatCard label="Open Issues" value={overview?.open_issues} accent={CARD_ACCENTS['Open Issues']} />
                 <StatCard label="Events This Week" value={overview?.events_this_week} accent={CARD_ACCENTS['Events This Week']} />
                 <StatCard label="Flagged Important" value={overview?.important_items} accent={CARD_ACCENTS['Flagged Important']} />
+                <StatCard label="Active Work Orders" value={overview?.active_work_orders} accent={CARD_ACCENTS['Active Work Orders']} />
+                <StatCard label="Overdue Work Orders" value={overview?.overdue_work_orders} accent={CARD_ACCENTS['Overdue Work Orders']} />
+                <StatCard label="Deployed" value={overview?.deployed_assets} accent={CARD_ACCENTS['Deployed']} />
+                <StatCard label="Spare" value={overview?.spare_assets} accent={CARD_ACCENTS['Spare']} />
+                <StatCard label="In Repair" value={overview?.in_repair_assets} accent={CARD_ACCENTS['In Repair']} />
+                <StatCard label="Critical Assets" value={overview?.critical_assets} accent={CARD_ACCENTS['Critical Assets']} />
+                {overview?.warranty_expiring_30d > 0 && <StatCard label="Warranty Expiring" value={overview.warranty_expiring_30d} accent={CARD_ACCENTS['Warranty Expiring']} />}
+                {overview?.licenses_expiring_30d > 0 && <StatCard label="Licenses Expiring" value={overview.licenses_expiring_30d} accent={CARD_ACCENTS['Licenses Expiring']} />}
             </div>
 
             <div className="dashboard-grid">
@@ -421,6 +663,8 @@ export function DashboardPage({ currentUser }) {
             <QueryPoolSection />
 
             <RemindersSection />
+
+            <ProcurementSection />
 
             {currentUser?.role === 'owner' && (
                 <BillingSection currentUser={currentUser} />

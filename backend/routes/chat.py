@@ -102,7 +102,7 @@ async def get_all_users(ctx: InstanceContext = Depends(get_current_instance)):
 
 @router.get("/sessions")
 async def list_sessions_endpoint(ctx: InstanceContext = Depends(get_current_instance)):
-    person_id = ctx.person_id or 0
+    person_id = ctx.person_id
     return {"sessions": sessions.list_sessions(person_id, ctx.instance_id)}
 
 
@@ -130,7 +130,7 @@ async def get_session_endpoint(session_id: str, ctx: InstanceContext = Depends(g
 @router.post("/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, ctx: InstanceContext = Depends(get_current_instance)):
     session_id = req.session_id
-    person_id = ctx.person_id or 0
+    person_id = ctx.person_id
     history = sessions.get_session(session_id, ctx.instance_id) if session_id else None
     if history is None:
         session_id = sessions.create_session(person_id, ctx.instance_id)
@@ -152,7 +152,7 @@ async def chat_stream_endpoint(req: ChatRequest, ctx: InstanceContext = Depends(
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest, ctx: InstanceContext = Depends(get_current_instance)):
     session_id = req.session_id
-    person_id = ctx.person_id or 0
+    person_id = ctx.person_id
     history = sessions.get_session(session_id, ctx.instance_id) if session_id else None
     if history is None:
         session_id = sessions.create_session(person_id, ctx.instance_id)
@@ -196,6 +196,8 @@ async def pending_approvals_count(ctx: InstanceContext = Depends(get_current_ins
 
 @router.post("/admin/send-daily-report")
 async def trigger_daily_report(ctx: InstanceContext = Depends(get_current_instance)):
+    if ctx.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     from backend.daily_report import generate_and_send_daily_reports
     result = generate_and_send_daily_reports(ctx.instance_id)
     return {"status": "sent", "details": result}

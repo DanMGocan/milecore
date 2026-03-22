@@ -10,7 +10,7 @@ from backend.inbound_email import (
     _extract_fields_with_claude,
     _raw_extract,
     _match_sender_to_person,
-    _create_issue,
+    _create_ticket,
     process_inbound_email,
 )
 
@@ -18,15 +18,18 @@ from backend.inbound_email import (
 # --- TO address parsing ------------------------------------------------------
 
 def test_parse_slug_from_to():
-    assert _parse_instance_from_to("workday@tickets.truecore.cloud") == "workday"
+    result = _parse_instance_from_to("workday@tickets.truecore.cloud")
+    assert result == {"slug": "workday", "ticket_id": None, "type": "ticket"}
 
 
 def test_parse_slug_from_to_with_name():
-    assert _parse_instance_from_to("Support <workday@tickets.truecore.cloud>") == "workday"
+    result = _parse_instance_from_to("Support <workday@tickets.truecore.cloud>")
+    assert result == {"slug": "workday", "ticket_id": None, "type": "ticket"}
 
 
 def test_parse_slug_case_insensitive():
-    assert _parse_instance_from_to("WorkDay@Tickets.TrueCore.Cloud") == "workday"
+    result = _parse_instance_from_to("WorkDay@Tickets.TrueCore.Cloud")
+    assert result == {"slug": "workday", "ticket_id": None, "type": "ticket"}
 
 
 def test_parse_slug_wrong_domain():
@@ -40,6 +43,40 @@ def test_parse_slug_empty():
 
 def test_parse_slug_no_local_part():
     assert _parse_instance_from_to("@tickets.truecore.cloud") is None
+
+
+def test_parse_reply_address():
+    result = _parse_instance_from_to("workday+42@tickets.truecore.cloud")
+    assert result == {"slug": "workday", "ticket_id": 42, "type": "ticket"}
+
+
+def test_parse_reply_address_with_name():
+    result = _parse_instance_from_to("Support <workday+7@tickets.truecore.cloud>")
+    assert result == {"slug": "workday", "ticket_id": 7, "type": "ticket"}
+
+
+def test_parse_reply_address_invalid_ticket_id():
+    result = _parse_instance_from_to("workday+abc@tickets.truecore.cloud")
+    assert result == {"slug": "workday", "ticket_id": None, "type": "ticket"}
+
+
+def test_parse_booking_address():
+    result = _parse_instance_from_to("book-workday@tickets.truecore.cloud")
+    assert result == {"slug": "workday", "ticket_id": None, "type": "booking"}
+
+
+def test_parse_booking_address_with_name():
+    result = _parse_instance_from_to("Bookings <book-acme@tickets.truecore.cloud>")
+    assert result == {"slug": "acme", "ticket_id": None, "type": "booking"}
+
+
+def test_parse_booking_address_case_insensitive():
+    result = _parse_instance_from_to("Book-WorkDay@Tickets.TrueCore.Cloud")
+    assert result == {"slug": "workday", "ticket_id": None, "type": "booking"}
+
+
+def test_parse_booking_no_slug():
+    assert _parse_instance_from_to("book-@tickets.truecore.cloud") is None
 
 
 # --- Addon check --------------------------------------------------------------
@@ -121,15 +158,15 @@ def test_rate_limit_exceeded(mock_eq):
 def test_raw_extract():
     result = _raw_extract("Printer broken", "The printer on floor 3 is jammed")
     assert result["title"] == "Printer broken"
-    assert result["symptom"] == "The printer on floor 3 is jammed"
-    assert result["issue_type"] == "other"
-    assert result["severity"] == "medium"
+    assert result["description"] == "The printer on floor 3 is jammed"
+    assert result["ticket_type"] == "incident"
+    assert result["priority"] == "medium"
 
 
 def test_raw_extract_empty():
     result = _raw_extract("", "")
     assert result["title"] == "Inbound email ticket"
-    assert result["issue_type"] == "other"
+    assert result["ticket_type"] == "incident"
 
 
 # --- Claude extraction --------------------------------------------------------
@@ -139,14 +176,35 @@ def test_raw_extract_empty():
 def test_claude_extraction_success(mock_client, mock_inc):
     mock_response = MagicMock()
     mock_response.content = [MagicMock(
-        text='{"title": "Printer jam", "symptom": "Paper stuck", "issue_type": "hardware", "severity": "low", "category": "printer"}'
+        text='{"title": "Printer jam", "description": "Paper stuck", "ticket_type": "hardware", "priority": "low", "keywords": "printer,paper jam,tray"}'
     )]
     mock_client.return_value.messages.create.return_value = mock_response
 
     result = _extract_fields_with_claude("Printer issue", "Paper stuck in tray", 1)
     assert result["title"] == "Printer jam"
-    assert result["issue_type"] == "hardware"
-    assert result["severity"] == "low"
+    assert result["ticket_type"] == "hardware"
+    assert result["priority"] == "low"
+    assert result["keywords"] == "printer,paper jam,tray"
+
+
+@patch("backend.claude_client._increment_query_count", return_value=None)
+@patch("backend.claude_client._get_client")
+def test_extraction_keywords_missing_defaults_empty(mock_client, mock_inc):
+    """If Claude omits keywords, default to empty string."""
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(
+        text='{"title": "Test", "description": "Desc", "ticket_type": "incident", "priority": "medium"}'
+    )]
+    mock_client.return_value.messages.create.return_value = mock_response
+
+    result = _extract_fields_with_claude("Test", "Desc", 1)
+    assert result["keywords"] == ""
+
+
+def test_raw_extract_has_empty_keywords():
+    """Fallback raw extraction sets keywords to empty string."""
+    result = _raw_extract("Subject", "Body text")
+    assert result["keywords"] == ""
 
 
 @patch("backend.claude_client._increment_query_count")
@@ -154,7 +212,7 @@ def test_claude_extraction_quota_exhausted(mock_inc):
     mock_inc.return_value = {"error": "Query limit reached"}
     result = _extract_fields_with_claude("Test subject", "Test body", 1)
     assert result["title"] == "Test subject"
-    assert result["issue_type"] == "other"
+    assert result["ticket_type"] == "incident"
 
 
 @patch("backend.claude_client._increment_query_count", return_value=None)
@@ -163,7 +221,7 @@ def test_claude_extraction_api_error_falls_back(mock_client, mock_inc):
     mock_client.return_value.messages.create.side_effect = Exception("API Error")
     result = _extract_fields_with_claude("Subject", "Body text", 1)
     assert result["title"] == "Subject"
-    assert result["issue_type"] == "other"
+    assert result["ticket_type"] == "incident"
 
 
 # --- Person matching ----------------------------------------------------------
@@ -171,7 +229,7 @@ def test_claude_extraction_api_error_falls_back(mock_client, mock_inc):
 @patch("backend.inbound_email.execute_query")
 def test_match_sender_found(mock_eq):
     mock_eq.return_value = {"rows": [{"id": 42}]}
-    assert _match_sender_to_person(1, "jane@company.com") == 42
+    assert _match_sender_to_person(1, "jane@company.com") == {"id": 42}
 
 
 @patch("backend.inbound_email.execute_query")
@@ -180,23 +238,29 @@ def test_match_sender_not_found(mock_eq):
     assert _match_sender_to_person(1, "unknown@company.com") is None
 
 
-# --- Issue creation -----------------------------------------------------------
+# --- Ticket creation ----------------------------------------------------------
 
 @patch("backend.inbound_email.execute_query")
-def test_create_issue(mock_eq):
+def test_create_ticket(mock_eq):
     mock_eq.return_value = {"lastrowid": 99}
-    fields = {"issue_type": "hardware", "category": "printer", "title": "Broken", "symptom": "Jammed", "severity": "low"}
-    result = _create_issue(1, fields, reported_by=42)
+    fields = {"ticket_type": "hardware", "title": "Broken", "description": "Jammed", "priority": "low", "keywords": "printer,paper jam"}
+    result = _create_ticket(1, fields, requester_id=42, site_id=None)
     assert result == 99
-    assert "technical_issues" in mock_eq.call_args[0][0]
+    # First call is the INSERT INTO tickets, second is the timeline entry
+    insert_sql = mock_eq.call_args_list[0][0][0]
+    insert_params = mock_eq.call_args_list[0][0][1]
+    assert "INSERT INTO tickets" in insert_sql
+    assert "keywords" in insert_sql
+    assert "printer,paper jam" in insert_params
+    assert "ticket_timeline" in mock_eq.call_args_list[1][0][0]
 
 
 # --- Full orchestration -------------------------------------------------------
 
 @patch("backend.inbound_email._send_confirmation")
 @patch("backend.inbound_email._log_inbound_email")
-@patch("backend.inbound_email._create_issue", return_value=101)
-@patch("backend.inbound_email._match_sender_to_person", return_value=42)
+@patch("backend.inbound_email._create_ticket", return_value=101)
+@patch("backend.inbound_email._match_sender_to_person", return_value={"id": 42, "site_id": 5})
 @patch("backend.inbound_email._extract_fields_with_claude")
 @patch("backend.inbound_email._check_sender_whitelist", return_value=True)
 @patch("backend.inbound_email._check_rate_limit", return_value=True)
@@ -206,10 +270,14 @@ def test_process_full_success(
     mock_eq, mock_addon, mock_rate, mock_whitelist,
     mock_extract, mock_match, mock_create, mock_log, mock_confirm,
 ):
-    mock_eq.return_value = {"rows": [{"id": 1}]}  # instance lookup
+    # First call: instance lookup; second call: email_thread_id lookup
+    mock_eq.side_effect = [
+        {"rows": [{"id": 1}]},
+        {"rows": [{"email_thread_id": "<thread@test>"}]},
+    ]
     mock_extract.return_value = {
-        "title": "Test Issue", "symptom": "Test symptom",
-        "issue_type": "software", "severity": "medium", "category": "app",
+        "title": "Test Issue", "description": "Test description",
+        "ticket_type": "incident", "priority": "medium",
     }
 
     payload = {
@@ -222,8 +290,12 @@ def test_process_full_success(
 
     result = process_inbound_email(payload)
     assert result["status"] == "processed"
-    assert result["technical_issue_id"] == 101
+    assert result["ticket_id"] == 101
     mock_confirm.assert_called_once()
+    # Verify confirmation includes threading params
+    confirm_kwargs = mock_confirm.call_args
+    assert confirm_kwargs[1].get("instance_slug") == "workday"
+    assert confirm_kwargs[1].get("email_thread_id") == "<thread@test>"
 
 
 @patch("backend.inbound_email._log_inbound_email")

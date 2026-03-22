@@ -68,12 +68,17 @@ async def create_instance(body: CreateInstanceBody, user: AuthUser = Depends(get
     instance_id = result["lastrowid"]
 
     # Create a person record for the owner in the people table
+    display = user.display_name or user.email.split("@")[0]
+    parts = display.split(" ", 1)
+    first_name = parts[0]
+    last_name = parts[1] if len(parts) > 1 else ""
     person_result = execute_query(
-        "INSERT INTO people (name, email, role, status, instance_id) VALUES (?, ?, 'owner', 'active', ?)",
-        [user.display_name or user.email.split("@")[0], user.email, instance_id],
+        "INSERT INTO people (first_name, last_name, email, role_title, is_user, user_role, status, instance_id) "
+        "VALUES (?, ?, ?, 'Owner', TRUE, 'owner', 'active', ?) RETURNING id",
+        [first_name, last_name, user.email, instance_id],
         instance_id=instance_id,
     )
-    person_id = person_result.get("lastrowid")
+    person_id = person_result["rows"][0]["id"] if person_result.get("rows") else person_result.get("lastrowid")
 
     # Create owner membership
     membership_result = execute_query(
@@ -168,12 +173,17 @@ async def join_instance(user: AuthUser = Depends(get_current_user)):
         return {"message": "Already a member of this instance"}
 
     # Create a person record for the new member
+    display = user.display_name or user.email.split("@")[0]
+    parts = display.split(" ", 1)
+    first_name = parts[0]
+    last_name = parts[1] if len(parts) > 1 else ""
     person_result = execute_query(
-        "INSERT INTO people (name, email, role, status, instance_id) VALUES (?, ?, ?, 'active', ?)",
-        [user.display_name or user.email.split("@")[0], user.email, inv_role, inv_instance_id],
+        "INSERT INTO people (first_name, last_name, email, role_title, is_user, user_role, status, instance_id) "
+        "VALUES (?, ?, ?, ?, TRUE, ?, 'active', ?) RETURNING id",
+        [first_name, last_name, user.email, inv_role.title(), inv_role, inv_instance_id],
         instance_id=inv_instance_id,
     )
-    person_id = person_result.get("lastrowid")
+    person_id = person_result["rows"][0]["id"] if person_result.get("rows") else person_result.get("lastrowid")
 
     # Create membership
     mem_result = execute_query(
@@ -202,7 +212,7 @@ async def join_instance(user: AuthUser = Depends(get_current_user)):
         "message": "Joined instance successfully",
         "instance_id": inv_instance_id,
         "role": inv_role,
-        "billing_note": "A $19.99/month seat has been added to the instance subscription." if seat_result.get("seats") else None,
+        "billing_note": "A €19.99/month seat has been added to the instance subscription." if seat_result.get("seats") else None,
     }
 
 

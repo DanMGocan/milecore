@@ -88,7 +88,54 @@ def _important_since(site_id: int, since: str, instance_id: int = 1) -> list[dic
     return items
 
 
-def _format_report(site_name: str, issues: list, visits: list, important: list, since_date: str) -> str:
+def _overdue_work_orders(site_id: int, instance_id: int = 1) -> list[dict]:
+    result = execute_query(
+        "SELECT wo_number, title, due_date, priority FROM work_orders "
+        "WHERE status = 'overdue' AND site_id = ? AND instance_id = ?",
+        [site_id, instance_id],
+        instance_id=instance_id,
+    )
+    return result.get("rows", [])
+
+
+def _upcoming_maintenance(site_id: int, instance_id: int = 1) -> list[dict]:
+    result = execute_query(
+        "SELECT wo_number, title, due_date, priority FROM work_orders "
+        "WHERE status IN ('open', 'scheduled') "
+        "AND due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days' "
+        "AND site_id = ? AND instance_id = ?",
+        [site_id, instance_id],
+        instance_id=instance_id,
+    )
+    return result.get("rows", [])
+
+
+def _overdue_inspections(site_id: int, instance_id: int = 1) -> list[dict]:
+    result = execute_query(
+        "SELECT title, due_date, priority FROM inspection_records "
+        "WHERE status = 'scheduled' AND due_date < CURRENT_DATE "
+        "AND site_id = ? AND instance_id = ?",
+        [site_id, instance_id],
+        instance_id=instance_id,
+    )
+    return result.get("rows", [])
+
+
+def _upcoming_inspections(site_id: int, instance_id: int = 1) -> list[dict]:
+    result = execute_query(
+        "SELECT title, due_date, priority FROM inspection_records "
+        "WHERE status = 'scheduled' "
+        "AND due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days' "
+        "AND site_id = ? AND instance_id = ?",
+        [site_id, instance_id],
+        instance_id=instance_id,
+    )
+    return result.get("rows", [])
+
+
+def _format_report(site_name: str, issues: list, visits: list, important: list, since_date: str,
+                   overdue_wos: list | None = None, upcoming_wos: list | None = None,
+                   overdue_insps: list | None = None, upcoming_insps: list | None = None) -> str:
     today = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     lines = [
@@ -127,6 +174,26 @@ def _format_report(site_name: str, issues: list, visits: list, important: list, 
     else:
         lines.append("  No items flagged as important since last report.")
 
+    if overdue_wos:
+        lines += ["", "OVERDUE MAINTENANCE", "-" * 30]
+        for wo in overdue_wos:
+            lines.append(f"  - [{wo.get('wo_number', '?')}] {wo['title']} (due: {wo.get('due_date', 'N/A')}, priority: {wo.get('priority', 'N/A')})")
+
+    if upcoming_wos:
+        lines += ["", "UPCOMING MAINTENANCE (Next 7 Days)", "-" * 30]
+        for wo in upcoming_wos:
+            lines.append(f"  - [{wo.get('wo_number', '?')}] {wo['title']} (due: {wo.get('due_date', 'N/A')})")
+
+    if overdue_insps:
+        lines += ["", "OVERDUE INSPECTIONS", "-" * 30]
+        for ir in overdue_insps:
+            lines.append(f"  - {ir['title']} (due: {ir.get('due_date', 'N/A')}, priority: {ir.get('priority', 'N/A')})")
+
+    if upcoming_insps:
+        lines += ["", "UPCOMING INSPECTIONS (Next 7 Days)", "-" * 30]
+        for ir in upcoming_insps:
+            lines.append(f"  - {ir['title']} (due: {ir.get('due_date', 'N/A')})")
+
     return "\n".join(lines)
 
 
@@ -156,8 +223,13 @@ def generate_and_send_daily_reports(instance_id: int = 1) -> list[dict]:
         issues = _new_issues(site_id, instance_id)
         visits = _vendor_visits_today(site_id, instance_id)
         important = _important_since(site_id, since, instance_id)
+        overdue_wos = _overdue_work_orders(site_id, instance_id)
+        upcoming_wos = _upcoming_maintenance(site_id, instance_id)
+        overdue_insps = _overdue_inspections(site_id, instance_id)
+        upcoming_insps = _upcoming_inspections(site_id, instance_id)
 
-        body = _format_report(site_name, issues, visits, important, since_date)
+        body = _format_report(site_name, issues, visits, important, since_date,
+                              overdue_wos, upcoming_wos, overdue_insps, upcoming_insps)
         to_name = f"{sup['first_name']} {sup['last_name']}"
         subject = f"Daily Site Report -- {site_name} -- {date.today().isoformat()}"
 

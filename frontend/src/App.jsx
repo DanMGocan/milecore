@@ -8,6 +8,7 @@ const ChatPage = lazy(() => import('./chat').then(m => ({ default: m.ChatPage })
 const BrowserPage = lazy(() => import('./browser').then(m => ({ default: m.BrowserPage })));
 const DashboardPage = lazy(() => import('./dashboard').then(m => ({ default: m.DashboardPage })));
 const DocumentationPage = lazy(() => import('./documentation').then(m => ({ default: m.DocumentationPage })));
+const AdminPage = lazy(() => import('./admin').then(m => ({ default: m.AdminPage })));
 
 function SkeletonFallback() {
     return (
@@ -27,6 +28,7 @@ function AppContent() {
         if (path === '/documentation' || path === '/docs') return 'documentation';
         if (path === '/database' || path === '/browser') return 'browser';
         if (path === '/dashboard') return 'dashboard';
+        if (path === '/admin') return 'admin';
         if (path === '/chat') return 'chat';
         if (path === '/login') return 'login';
         return 'landing';
@@ -38,7 +40,7 @@ function AppContent() {
     useEffect(() => {
         const pathMap = {
             landing: '/', login: '/login', chat: '/chat',
-            browser: '/database', dashboard: '/dashboard', documentation: '/documentation',
+            browser: '/database', dashboard: '/dashboard', admin: '/admin', documentation: '/documentation',
         };
         const target = pathMap[page] || '/';
         if (window.location.pathname !== target) {
@@ -52,6 +54,7 @@ function AppContent() {
             if (path === '/documentation' || path === '/docs') setPage('documentation');
             else if (path === '/database' || path === '/browser') setPage('browser');
             else if (path === '/dashboard') setPage('dashboard');
+            else if (path === '/admin') setPage('admin');
             else if (path === '/chat') setPage('chat');
             else if (path === '/login') setPage('login');
             else setPage('landing');
@@ -152,6 +155,7 @@ function AppContent() {
                     <button className={`nav-link${page === 'browser' ? ' active' : ''}`} onClick={() => { setPage('browser'); setMenuOpen(false); }}>Database</button>
                     <button className={`nav-link${page === 'dashboard' ? ' active' : ''}`} onClick={() => { setPage('dashboard'); setMenuOpen(false); }}>Dashboard</button>
                     <button className={`nav-link nav-link-docs${page === 'documentation' ? ' active' : ''}`} onClick={() => { setPage('documentation'); setMenuOpen(false); }}>Docs</button>
+                    {user?.email === 'gocandan@gmail.com' && <button className={`nav-link${page === 'admin' ? ' active' : ''}`} onClick={() => { setPage('admin'); setMenuOpen(false); }}>Admin</button>}
                 </div>
                 <div className="nav-actions">
                     <button className={`nav-link${page === 'documentation' ? ' active' : ''}`} onClick={() => setPage('documentation')}>Docs</button>
@@ -162,6 +166,7 @@ function AppContent() {
                     {page === 'chat' && <div className="page-enter"><ChatPage currentUser={currentUser} /></div>}
                     {page === 'browser' && <div className="page-enter"><BrowserPage /></div>}
                     {page === 'dashboard' && <div className="page-enter"><DashboardPage currentUser={currentUser} /></div>}
+                    {page === 'admin' && <div className="page-enter"><AdminPage /></div>}
                     {page === 'documentation' && <div className="page-enter"><DocumentationPage /></div>}
                 </Suspense>
             </div>

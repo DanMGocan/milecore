@@ -10,14 +10,21 @@ const TOC = [
     { id: 'database-browser', label: 'Database Browser' },
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'email', label: 'Email' },
+    { id: 'ticket-management', label: 'Ticket Management' },
     { id: 'user-roles', label: 'User Roles' },
     { id: 'daily-reports', label: 'Daily Reports' },
     { id: 'important-flags', label: 'Important Flags' },
     { id: 'projects', label: 'Projects' },
     { id: 'knowledge', label: 'Knowledge Management' },
+    { id: 'bookings', label: 'Bookings & Reservations' },
+    { id: 'maintenance', label: 'Preventive Maintenance' },
+    { id: 'asset-lifecycle', label: 'Asset Lifecycle' },
+    { id: 'procurement', label: 'Purchase Requests' },
+    { id: 'service-catalog', label: 'Service Catalog' },
     { id: 'schema', label: 'Database Schema' },
     { id: 'scope', label: 'Scope & Limitations' },
     { id: 'qa-testing', label: 'QA & Testing' },
+    { id: 'admin-dashboard', label: 'Admin Dashboard' },
     { id: 'roadmap', label: 'Roadmap' },
     { id: 'cost-estimate', label: 'Cost Estimate' },
 ];
@@ -90,13 +97,20 @@ export function DocumentationPage() {
                 <DatabaseBrowserSection />
                 <DashboardSection />
                 <EmailSection />
+                <TicketManagementSection />
                 <UserRolesSection />
                 <DailyReportsSection />
                 <ImportantFlagsSection />
                 <ProjectsSection />
                 <KnowledgeSection />
+                <BookingsSection />
+                <MaintenanceSection />
+                <AssetLifecycleDocSection />
+                <ProcurementDocSection />
+                <ServiceCatalogSection />
                 <SchemaSection />
                 <ScopeSection />
+                <AdminDashboardSection />
                 <QATestingSection />
                 <RoadmapSection />
                 <CostEstimateSection />
@@ -179,6 +193,21 @@ function FeaturesSection() {
                 <li>Audit log — automatic tracking of all data changes</li>
             </ul>
 
+            <h3>Preventive Maintenance & Inspections</h3>
+            <ul>
+                <li>Maintenance task templates — reusable activity definitions with instructions, tools, and cost estimates</li>
+                <li>Checklist templates — multi-type inspection forms (pass/fail, numeric, text, photo, rating)</li>
+                <li>Maintenance plans — recurring schedules with daily to annual recurrence patterns</li>
+                <li>Inspections — separate recurring inspection schedules with compliance tracking</li>
+                <li>Work orders — auto-generated from plans or created ad-hoc, with full lifecycle tracking</li>
+                <li>Inspection records — formal inspection instances with pass/fail results</li>
+                <li>Auto-escalation — failed checklist items automatically create tickets</li>
+                <li>Background scheduling — work orders and inspections generated automatically when due</li>
+                <li>Parts tracking — link inventory items consumed during maintenance</li>
+                <li>Cost tracking — estimated vs. actual costs on work orders</li>
+                <li>Compliance — regulatory standards and certification tracking</li>
+            </ul>
+
             <h3>Knowledge Management</h3>
             <ul>
                 <li>Knowledge articles — troubleshooting guides, SOPs, reference documents</li>
@@ -225,10 +254,7 @@ function FeaturesSection() {
                 <li>Visual table browser with row counts per table</li>
                 <li>Schema viewer — column names, types, primary key and NOT NULL indicators</li>
                 <li>Paginated data grid (50 rows per page)</li>
-                <li>Insert rows via form</li>
-                <li>Delete individual rows</li>
                 <li>Create new tables with custom column definitions</li>
-                <li>Add columns to existing tables</li>
             </ul>
 
             <h3>Dashboard</h3>
@@ -246,6 +272,14 @@ function FeaturesSection() {
                 <li>Per-user conversation history</li>
                 <li>Admin-only tools — approval management, daily reports, database reset</li>
                 <li>User profile display with name, title, role, and admin badge</li>
+            </ul>
+
+            <h3>Billing & Subscription</h3>
+            <ul>
+                <li>Query packs — buy 250 queries at a time via Stripe checkout</li>
+                <li>Add-ons — email, daily reports, and inbound email tickets with per-addon toggles</li>
+                <li>Enterprise tier — custom database and dedicated instance separation (contact us)</li>
+                <li>Stripe billing portal for payment method management</li>
             </ul>
 
             <h3>Important Flags</h3>
@@ -512,25 +546,17 @@ function DatabaseBrowserSection() {
 
             <h3>Data Grid</h3>
             <p>
-                Table data is displayed in a paginated grid. Rows are shown 50 at a time. Each row has a delete button that appears on hover.
+                Table data is displayed in a paginated grid. Rows are shown 50 at a time. Data modifications (inserts, updates, deletes) are handled through the AI chat.
             </p>
-
-            <h3>CRUD Operations</h3>
-            <ul>
-                <li><strong>Create:</strong> Click "Add Row" to open a form with all columns. Fill in the values and submit.</li>
-                <li><strong>Read:</strong> Browse the data grid, paginate through rows.</li>
-                <li><strong>Update:</strong> Not available in the browser UI (use chat for updates).</li>
-                <li><strong>Delete:</strong> Hover over a row and click the red delete button.</li>
-            </ul>
 
             <h3>Pagination</h3>
             <p>
                 Navigate pages with Previous/Next buttons. The current page and total are displayed between the buttons.
             </p>
 
-            <h3>Create Table & Add Column</h3>
+            <h3>Create Table</h3>
             <p>
-                Use the toolbar buttons to create entirely new tables or add columns to existing tables. A modal form guides you through the process.
+                Use the "+ New" button in the sidebar to create entirely new tables. A modal form guides you through defining the table name and columns.
             </p>
 
             <h3>Export & Download</h3>
@@ -609,6 +635,10 @@ function EmailSection() {
                 <strong>Recipient lookup is required.</strong> The AI must find the recipient's email in the database before sending. If the person doesn't have an email address on file, the AI will tell you and ask you to add one.
             </div>
 
+            <div className="doc-callout doc-callout--tip">
+                <strong>Rate limit:</strong> Each instance can send a maximum of 20 emails per hour through the chat tool. This limit is configurable via the <span className="doc-code">EMAIL_RATE_LIMIT_PER_HOUR</span> environment variable.
+            </div>
+
             <h3>Brevo SMTP Configuration</h3>
             <p>Email requires these environment variables to be set:</p>
             <table className="doc-table">
@@ -635,6 +665,99 @@ function EmailSection() {
             <div className="doc-callout doc-callout--tip">
                 <strong>Automatic failover:</strong> If a spare key is configured, TrueCore.cloud will seamlessly switch to it when the primary key is rate-limited or fails authentication. This happens transparently with no interruption to the user's conversation.
             </div>
+        </section>
+    );
+}
+
+function TicketManagementSection() {
+    return (
+        <section id="ticket-management" className="doc-section">
+            <h2>Ticket Management</h2>
+            <p>
+                TrueCore.cloud provides comprehensive ticket lifecycle management including replies, watchers, attachments, and a full timeline audit trail.
+            </p>
+
+            <h3>Ticket Replies</h3>
+            <p>Technicians can reply to tickets directly through the chatbot. Replies are sent as emails to the ticket requester and all watchers.</p>
+            <ul>
+                <li><strong>Via chatbot:</strong> Say "reply to ticket #5 saying we're looking into this" and the AI uses the <span className="doc-code">reply_to_ticket</span> tool</li>
+                <li><strong>Email threading:</strong> All replies are threaded in the requester's inbox using standard email threading headers (In-Reply-To, References)</li>
+                <li><strong>Inbound replies:</strong> When a requester replies to a ticket confirmation email, their reply is automatically captured and added to the ticket history</li>
+                <li>Reply history is stored in the <span className="doc-code">ticket_replies</span> table with direction (outbound/inbound)</li>
+            </ul>
+
+            <h3>Watchers</h3>
+            <p>Add people as watchers on tickets so they receive all email updates.</p>
+            <ul>
+                <li><strong>Add via chatbot:</strong> "Add John as a watcher on ticket #5"</li>
+                <li><strong>Add via API:</strong> <span className="doc-code">POST /api/tickets/5/watchers</span></li>
+                <li>Watchers are CC'd on all outbound ticket replies</li>
+                <li>Watchers are also notified when an inbound reply is received</li>
+                <li>Duplicate watchers are prevented (unique constraint on ticket + person)</li>
+            </ul>
+
+            <h3>Attachments</h3>
+            <p>Users can attach images to tickets and emails. All uploaded images are automatically converted to AVIF format for optimal compression and stored in S3-compatible object storage.</p>
+            <ul>
+                <li><strong>Chat attachments:</strong> Click the attachment icon in the chat to upload an image, then ask the AI to include it in an email or ticket reply</li>
+                <li><strong>Ticket attachments:</strong> Upload directly via <span className="doc-code">POST /api/tickets/5/attachments</span></li>
+                <li><strong>Supported types:</strong> JPEG, PNG, GIF, WebP, AVIF, BMP, TIFF, SVG</li>
+                <li><strong>AVIF conversion:</strong> Raster images are automatically converted to AVIF. GIF and SVG pass through unchanged to preserve animation and vector properties</li>
+                <li><strong>Size limit:</strong> 25 MB per file (configurable via <span className="doc-code">TICKET_ATTACHMENT_MAX_SIZE_MB</span>)</li>
+                <li><strong>Security:</strong> Images are only accessible through authenticated ticket endpoints — not publicly reachable</li>
+            </ul>
+
+            <h3>Timeline Audit Trail</h3>
+            <p>Every ticket action is recorded in the <span className="doc-code">ticket_timeline</span> table for complete auditability.</p>
+            <p>Tracked events:</p>
+            <table className="doc-table">
+                <thead><tr><th>Event Type</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><span className="doc-code">created</span></td><td>Ticket was created</td></tr>
+                    <tr><td><span className="doc-code">replied</span></td><td>A reply was sent or received</td></tr>
+                    <tr><td><span className="doc-code">status_changed</span></td><td>Status updated (old/new values recorded)</td></tr>
+                    <tr><td><span className="doc-code">priority_changed</span></td><td>Priority updated (old/new values recorded)</td></tr>
+                    <tr><td><span className="doc-code">assigned</span></td><td>Ticket assigned to someone</td></tr>
+                    <tr><td><span className="doc-code">watcher_added</span></td><td>A watcher was added</td></tr>
+                    <tr><td><span className="doc-code">watcher_removed</span></td><td>A watcher was removed</td></tr>
+                    <tr><td><span className="doc-code">attachment_added</span></td><td>A file was attached</td></tr>
+                </tbody>
+            </table>
+            <p>View the timeline via chatbot ("show me the history of ticket #5") or API (<span className="doc-code">GET /api/tickets/5/timeline</span>).</p>
+
+            <h3>Keyword Extraction & Semantic Querying</h3>
+            <p>Every ticket has a <span className="doc-code">keywords</span> column containing AI-extracted keywords that describe the core topic, affected systems, and symptoms.</p>
+            <ul>
+                <li><strong>Auto-extraction:</strong> When tickets are created from email, Claude automatically extracts 5-10 keywords</li>
+                <li><strong>Chat-created tickets:</strong> The AI includes keywords when creating tickets via the chatbot</li>
+                <li><strong>Semantic queries:</strong> Ask things like "how many temperature issues since March?" or "show me all network-related tickets" — the AI searches the keywords column</li>
+                <li><strong>Example keywords:</strong> "temperature,hvac,overheating,conference room" or "printer,paper jam,floor 3,hp"</li>
+            </ul>
+
+            <h3>Priority & Status Changes</h3>
+            <p>When priority or status is changed (via chatbot or API), the change is automatically logged in the timeline with both the old and new values, along with who made the change and when.</p>
+
+            <h3>Email Threading (Plus-Addressing)</h3>
+            <p>
+                Each ticket gets a unique reply-to address in the format <span className="doc-code">{'slug+ticket_id@tickets.truecore.cloud'}</span>.
+                When a requester replies to this address, the email is automatically routed to the correct ticket as an inbound reply rather than creating a new ticket.
+            </p>
+
+            <h3>REST API Endpoints</h3>
+            <table className="doc-table">
+                <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>GET</td><td><span className="doc-code">/api/tickets/:id/timeline</span></td><td>Full audit trail</td></tr>
+                    <tr><td>GET</td><td><span className="doc-code">/api/tickets/:id/replies</span></td><td>All replies</td></tr>
+                    <tr><td>GET</td><td><span className="doc-code">/api/tickets/:id/watchers</span></td><td>All watchers</td></tr>
+                    <tr><td>POST</td><td><span className="doc-code">/api/tickets/:id/watchers</span></td><td>Add watcher</td></tr>
+                    <tr><td>DELETE</td><td><span className="doc-code">/api/tickets/:id/watchers/:wid</span></td><td>Remove watcher</td></tr>
+                    <tr><td>GET</td><td><span className="doc-code">/api/tickets/:id/attachments</span></td><td>List attachments</td></tr>
+                    <tr><td>POST</td><td><span className="doc-code">/api/tickets/:id/attachments</span></td><td>Upload attachment</td></tr>
+                    <tr><td>GET</td><td><span className="doc-code">/api/tickets/:id/attachments/:aid</span></td><td>Download attachment</td></tr>
+                    <tr><td>PATCH</td><td><span className="doc-code">/api/tickets/:id</span></td><td>Update priority/status/assignment</td></tr>
+                </tbody>
+            </table>
         </section>
     );
 }
@@ -863,14 +986,364 @@ function KnowledgeSection() {
     );
 }
 
+function BookingsSection() {
+    return (
+        <section id="bookings" className="doc-section">
+            <h2>Bookings &amp; Reservations</h2>
+            <p>
+                TrueCore.cloud supports booking and reservation of shared workplace resources through the chat interface or via email.
+            </p>
+
+            <h3>Bookable Resources</h3>
+            <ul>
+                <li><strong>Rooms</strong> — Conference rooms, meeting rooms, training rooms. Includes capacity, AV capability, and feature tags (e.g. whiteboard, projector).</li>
+                <li><strong>Desks</strong> — Hot desks and shared workstations. Tracks monitor and docking station availability.</li>
+                <li><strong>Parking Spaces</strong> — Car park slots with types: <span className="doc-badge">standard</span> <span className="doc-badge">accessible</span> <span className="doc-badge">ev_charging</span> <span className="doc-badge">motorcycle</span></li>
+                <li><strong>Lockers</strong> — Personal storage lockers in sizes: <span className="doc-badge">small</span> <span className="doc-badge">standard</span> <span className="doc-badge">large</span></li>
+                <li><strong>Assets</strong> — Bookable equipment like projectors, laptops, or AV gear.</li>
+            </ul>
+            <p>
+                All resources belong to a <span className="doc-code">site</span> (building) and can be placed within a specific <span className="doc-code">floor</span> and <span className="doc-code">zone</span> for structured location tracking. The hierarchy is: <strong>Site → Floor → Zone → Resource</strong>. A free-text <span className="doc-code">location</span> field remains for additional detail.
+            </p>
+
+            <h3>Booking via Chat</h3>
+            <p>Simply talk to the AI to manage bookings:</p>
+            <ul>
+                <li><em>"Book Conference Room A for tomorrow 2pm-3pm"</em></li>
+                <li><em>"Is the training room free on Friday afternoon?"</em></li>
+                <li><em>"Cancel my desk booking for tomorrow"</em></li>
+                <li><em>"Show my bookings for this week"</em></li>
+                <li><em>"Book a desk with a monitor on the 2nd floor for Monday"</em></li>
+            </ul>
+            <p>
+                The AI checks availability before creating bookings. If the requested resource is taken, it automatically suggests alternatives at the same site.
+            </p>
+
+            <h3>Booking via Email</h3>
+            <p>
+                Send an email to <span className="doc-code">book-&#123;slug&#125;@tickets.truecore.cloud</span> with your booking request in the subject or body. Include what you need, when, and where.
+            </p>
+            <ul>
+                <li>If the resource is available, you receive a confirmation email with the booking details.</li>
+                <li>If unavailable, you receive an email with alternative resources that are free at the requested time.</li>
+            </ul>
+
+            <h3>Privacy</h3>
+            <p>
+                Booking privacy is enforced at the system level. The AI will <strong>never</strong> reveal who booked a resource. Other users can only see that a time slot is taken, not by whom. Users can always view their own bookings.
+            </p>
+
+            <h3>AV Support Notifications</h3>
+            <p>
+                When a room with AV equipment (<span className="doc-code">has_av = true</span>) or a large room (capacity of 20+) is booked, the system automatically sends an email to the configured AV support contact to check if AV assistance is needed.
+            </p>
+            <p>
+                Configure the AV support email via chat: <em>"Set AV support email to avteam@company.com"</em> (this stores the value in <span className="doc-code">app_settings</span>).
+            </p>
+
+            <h3>Conflict Prevention</h3>
+            <p>
+                Double-bookings are prevented at the database level using a PostgreSQL exclusion constraint. Even concurrent booking attempts cannot create overlapping reservations for the same resource.
+            </p>
+
+            <h3>Getting Started</h3>
+            <ol>
+                <li>Enable the <strong>Bookings</strong> add-on in the Billing section.</li>
+                <li>Add resources via chat: <em>"Add a hot desk called Desk 12 on the 2nd floor at the Dublin site"</em></li>
+                <li>Start booking: <em>"Book Desk 12 for tomorrow 9am to 5pm"</em></li>
+            </ol>
+        </section>
+    );
+}
+
+function MaintenanceSection() {
+    return (
+        <section id="maintenance" className="doc-section">
+            <h2>Preventive Maintenance & Inspections</h2>
+            <p>TrueCore includes a complete preventive maintenance and inspection management system designed for Facilities and Workplace teams. The system is organized into three tiers:</p>
+
+            <h3>Templates (Reusable Blueprints)</h3>
+            <p><strong>Maintenance Tasks</strong> are reusable activity definitions like "Replace HVAC filter" or "Check fire extinguisher". Each task includes category, estimated duration, required skills/tools, step-by-step instructions, safety notes, and cost estimates. Tasks can be linked to a preferred vendor for outsourced work.</p>
+            <p><strong>Checklist Templates</strong> define reusable inspection forms. Each checklist contains ordered items with various response types:</p>
+            <ul>
+                <li><strong>Pass/Fail</strong> — Standard pass/fail checks (e.g., "Is the fire extinguisher charged?")</li>
+                <li><strong>Yes/No</strong> — Binary yes/no questions</li>
+                <li><strong>Numeric</strong> — Measurements with acceptable min/max ranges and units (e.g., temperature in degrees, pressure in PSI)</li>
+                <li><strong>Text</strong> — Free-text observations</li>
+                <li><strong>Photo</strong> — Photographic evidence for compliance</li>
+                <li><strong>Rating</strong> — 1-5 scale ratings</li>
+            </ul>
+            <p>Checklist items can be configured with <code>failure_creates_ticket = true</code> to automatically escalate failures into tickets.</p>
+
+            <h3>Plans & Schedules</h3>
+            <p><strong>Maintenance Plans</strong> group multiple tasks with a recurring schedule. Supported recurrence patterns:</p>
+            <div className="doc-code-block">daily | weekly | biweekly | monthly | quarterly | semi_annual | annual | custom (N days)</div>
+            <p>Plans support seasonal filtering (e.g., HVAC winterization only in Oct-Nov), weekend exclusion, lead time configuration, compliance standard tracking, and assignment to teams, people, or vendors.</p>
+            <p><strong>Inspections</strong> are separate recurring schedules for formal inspections. They share the same recurrence options but are tracked independently with inspection-specific fields like certification requirements and regulatory references.</p>
+
+            <h3>Work Records (Execution)</h3>
+            <p><strong>Work Orders</strong> are the actual units of maintenance work. They are auto-generated from maintenance plans when due, or created ad-hoc. Each work order gets an auto-generated number (WO-YYYY-NNNN) and tracks:</p>
+            <ul>
+                <li>Assignment, scheduling, and status lifecycle (open → scheduled → in_progress → completed)</li>
+                <li>Estimated vs. actual cost and duration</li>
+                <li>Checklist responses with automatic spec validation</li>
+                <li>Parts/inventory consumed</li>
+                <li>Findings, resolution, and follow-up needs</li>
+            </ul>
+            <p><strong>Inspection Records</strong> are generated from inspection schedules or created ad-hoc. They track the inspector, overall pass/fail/partial result, findings, and corrective actions.</p>
+
+            <h3>Background Scheduling</h3>
+            <p>A background scheduler runs every 5 minutes and automatically:</p>
+            <ul>
+                <li>Generates work orders from active maintenance plans when <code>next_due_date</code> arrives (respecting lead time)</li>
+                <li>Generates inspection records from active inspections</li>
+                <li>Creates reminders for assigned personnel</li>
+                <li>Marks overdue work orders</li>
+                <li>Advances schedules to the next occurrence</li>
+            </ul>
+
+            <h3>Integration Points</h3>
+            <ul>
+                <li><strong>Assets</strong> — Plans and inspections can target specific assets. Full maintenance history per asset.</li>
+                <li><strong>Tickets</strong> — Failed checklist items auto-create tickets. Work orders can be created from tickets.</li>
+                <li><strong>Reminders</strong> — Auto-generated when work orders or inspections are created.</li>
+                <li><strong>Inventory</strong> — Parts consumed during maintenance are tracked and linked to inventory items.</li>
+                <li><strong>Locations</strong> — All entities can be scoped to sites, floors, zones, and rooms.</li>
+                <li><strong>Daily Reports</strong> — Overdue and upcoming maintenance/inspections included in daily reports.</li>
+                <li><strong>Dashboard</strong> — Active and overdue work order counts displayed as stat cards.</li>
+            </ul>
+
+            <h3>Example Chat Prompts</h3>
+            <div className="doc-code-block">
+                "Create a monthly HVAC filter change plan for Dublin HQ"{'\n'}
+                "Schedule a weekly fire safety inspection for Building A"{'\n'}
+                "Show me all overdue work orders"{'\n'}
+                "What maintenance was done on asset LAPTOP-001?"{'\n'}
+                "Create a checklist for server room inspections with temperature and humidity checks"{'\n'}
+                "Complete work order WO-2026-0001 with findings: all filters replaced"
+            </div>
+
+            <h3>REST API Endpoints</h3>
+            <table className="doc-table">
+                <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>GET/POST</td><td>/api/maintenance/tasks</td><td>List/create maintenance task templates</td></tr>
+                    <tr><td>GET/POST</td><td>/api/maintenance/checklists</td><td>List/create checklist templates</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/checklists/:id/items</td><td>Add item to checklist</td></tr>
+                    <tr><td>GET/POST</td><td>/api/maintenance/plans</td><td>List/create maintenance plans</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/plans/:id/tasks</td><td>Add task to plan</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/plans/:id/generate</td><td>Manually trigger work order</td></tr>
+                    <tr><td>GET/POST</td><td>/api/maintenance/work-orders</td><td>List/create work orders</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/work-orders/:id/checklist</td><td>Submit checklist responses</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/work-orders/:id/parts</td><td>Record parts used</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/work-orders/:id/complete</td><td>Complete work order</td></tr>
+                    <tr><td>GET/POST</td><td>/api/maintenance/inspections</td><td>List/create inspection schedules</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/inspections/:id/generate</td><td>Manually trigger inspection</td></tr>
+                    <tr><td>GET/POST</td><td>/api/maintenance/inspection-records</td><td>List/create inspection records</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/inspection-records/:id/checklist</td><td>Submit inspection checklist</td></tr>
+                    <tr><td>POST</td><td>/api/maintenance/inspection-records/:id/complete</td><td>Complete inspection</td></tr>
+                    <tr><td>GET</td><td>/api/maintenance/asset/:id/history</td><td>Asset maintenance history</td></tr>
+                    <tr><td>GET</td><td>/api/maintenance/overdue</td><td>All overdue items</td></tr>
+                    <tr><td>GET</td><td>/api/maintenance/stats</td><td>Overview statistics</td></tr>
+                </tbody>
+            </table>
+        </section>
+    );
+}
+
+function AssetLifecycleDocSection() {
+    return (
+        <section id="asset-lifecycle" className="doc-section">
+            <h2>Asset Lifecycle Management</h2>
+            <p>Comprehensive tracking of physical assets from acquisition through disposal, including lifecycle state transitions, assignment history, software/license management, document attachments, and disposal records.</p>
+
+            <h3>Lifecycle States</h3>
+            <p>Every asset has a <code>lifecycle_status</code> that follows a controlled state machine. Only valid transitions are allowed:</p>
+            <table className="doc-table">
+                <thead><tr><th>Status</th><th>Can Transition To</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Active</strong></td><td>Deployed, Spare, In Repair, Decommissioned, Lost</td></tr>
+                    <tr><td><strong>Deployed</strong></td><td>Active, Spare, In Repair, Pending Disposal, Lost</td></tr>
+                    <tr><td><strong>Spare</strong></td><td>Deployed, Pending Disposal, Decommissioned</td></tr>
+                    <tr><td><strong>In Repair</strong></td><td>Active, Spare, Decommissioned, Pending Disposal</td></tr>
+                    <tr><td><strong>Pending Disposal</strong></td><td>Disposed, Active (if disposal cancelled)</td></tr>
+                    <tr><td><strong>Decommissioned</strong></td><td>Pending Disposal, Disposed</td></tr>
+                    <tr><td><strong>Lost</strong></td><td>Active (if found)</td></tr>
+                    <tr><td><strong>Disposed</strong></td><td><em>Terminal state &mdash; no further transitions</em></td></tr>
+                </tbody>
+            </table>
+            <p>Every status change is automatically recorded in <code>asset_status_history</code> with who made the change and why.</p>
+
+            <h3>Assignment Tracking</h3>
+            <p>When an asset is assigned or reassigned to a person, the system maintains a full history in <code>asset_assignments</code>:</p>
+            <ul>
+                <li>Previous assignments are closed (end date set)</li>
+                <li>New assignment is created with start date</li>
+                <li>The asset's <code>assigned_to_person_id</code> is updated</li>
+            </ul>
+            <p>Example via chat: <em>"Assign laptop ABC123 to Sarah"</em> or <em>"Reassign the Dell monitor from John to Sarah"</em></p>
+
+            <h3>Software &amp; License Tracking</h3>
+            <p>Track what software is installed on each asset and manage license compliance:</p>
+            <ul>
+                <li><strong>software_installations</strong> &mdash; Records of software installed on specific assets, optionally linked to a license</li>
+                <li><strong>licenses</strong> &mdash; License records with seat counts, expiry dates, costs, and vendor links</li>
+                <li>When software is installed with a license link, <code>seats_used</code> is automatically incremented</li>
+                <li>License types: perpetual, subscription, OEM, volume, site, open source</li>
+            </ul>
+            <p>Example via chat: <em>"Install Microsoft Office on laptop XYZ, use the volume license"</em></p>
+
+            <h3>Asset Documents</h3>
+            <p>Attach files to assets (warranty certificates, invoices, manuals, photos) stored in S3. Document types: warranty, invoice, manual, certificate, photo, general.</p>
+
+            <h3>Disposal Workflow</h3>
+            <p>When an asset reaches end of life:</p>
+            <ol>
+                <li>Transition to <strong>Pending Disposal</strong> or <strong>Decommissioned</strong></li>
+                <li>Create a <strong>disposal record</strong> specifying method (recycled, donated, sold, destroyed, returned to vendor)</li>
+                <li>Record whether data was wiped and how</li>
+                <li>Asset automatically transitions to <strong>Disposed</strong> (terminal state)</li>
+            </ol>
+            <p>Example via chat: <em>"Dispose of the old HP printer &mdash; it was recycled by TechRecycle Ltd, data wiped with DBAN"</em></p>
+
+            <h3>Additional Asset Fields</h3>
+            <ul>
+                <li><strong>purchase_cost</strong> &mdash; Original purchase price</li>
+                <li><strong>vendor_id</strong> &mdash; Links to the vendor company who supplied the asset</li>
+                <li><strong>ip_address / mac_address</strong> &mdash; Network identifiers</li>
+                <li><strong>criticality</strong> &mdash; low, medium, high, or critical</li>
+                <li><strong>replacement_due_date</strong> &mdash; When the asset should be replaced</li>
+                <li><strong>warranty_type</strong> &mdash; manufacturer, extended, or third party</li>
+            </ul>
+
+            <h3>Dashboard Integration</h3>
+            <p>The dashboard shows asset lifecycle stats: deployed count, spare count, in-repair count, critical assets, and alerts for warranties and licenses expiring within 30 days.</p>
+        </section>
+    );
+}
+
+function ProcurementDocSection() {
+    return (
+        <section id="procurement" className="doc-section">
+            <h2>Purchase Requests</h2>
+            <p>A lightweight procurement module that lets team members submit purchase requests for equipment, supplies, or services. Managers and supervisors can review, approve, and track requests through their lifecycle.</p>
+
+            <h3>How It Works</h3>
+            <ul>
+                <li>Any team member can create a purchase request from the Dashboard</li>
+                <li>Each request includes the item description, estimated value, vendor, brand/model, and notes explaining the purpose</li>
+                <li>Managers review pending requests and approve or cancel them</li>
+                <li>Approved requests can be marked as ordered, then received once delivered</li>
+                <li>Every status change and comment is tracked in an update timeline</li>
+            </ul>
+
+            <h3>Status Flow</h3>
+            <div className="doc-flow">
+                <ol>
+                    <li><strong>Pending</strong> — newly created, awaiting review</li>
+                    <li><strong>Approved</strong> — reviewed and approved by a manager</li>
+                    <li><strong>Ordered</strong> — purchase order placed with the vendor</li>
+                    <li><strong>Received</strong> — items delivered (terminal state)</li>
+                </ol>
+                <p>A request can be <strong>Cancelled</strong> from any non-terminal state. Cancelled requests can be re-opened back to Pending if needed.</p>
+            </div>
+
+            <h3>Fields</h3>
+            <table className="doc-table">
+                <thead><tr><th>Field</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>Item Description</td><td>What needs to be purchased (required)</td></tr>
+                    <tr><td>Value</td><td>Estimated cost</td></tr>
+                    <tr><td>Brand / Model</td><td>Specific product details</td></tr>
+                    <tr><td>Vendor</td><td>Supplier name</td></tr>
+                    <tr><td>Notes</td><td>Justification, context, or additional details</td></tr>
+                </tbody>
+            </table>
+
+            <h3>REST API Endpoints</h3>
+            <table className="doc-table">
+                <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>POST</td><td>/api/procurement</td><td>Create a new purchase request</td></tr>
+                    <tr><td>GET</td><td>/api/procurement</td><td>List all requests (optional ?status= filter)</td></tr>
+                    <tr><td>GET</td><td>/api/procurement/:id</td><td>Get request details with update history</td></tr>
+                    <tr><td>PATCH</td><td>/api/procurement/:id</td><td>Update status, value, or vendor</td></tr>
+                    <tr><td>POST</td><td>/api/procurement/:id/updates</td><td>Add a note or comment</td></tr>
+                </tbody>
+            </table>
+        </section>
+    );
+}
+
+function ServiceCatalogSection() {
+    return (
+        <section id="service-catalog" className="doc-section">
+            <h2>Service Catalog</h2>
+            <p>A self-service catalog of available IT and workplace services. Team members can browse available services, submit requests with structured forms, and track fulfillment progress through defined workflow steps.</p>
+
+            <h3>How It Works</h3>
+            <ul>
+                <li>Admins define services in the catalog with categories, intake form templates, and fulfillment workflows</li>
+                <li>Each service has a form template defining what information to collect (dates, people, locations, etc.)</li>
+                <li>Users request services through the AI chat — the AI knows the catalog and collects the required info</li>
+                <li>Requests that require approval are routed to the designated approver</li>
+                <li>Fulfillment tasks track progress through each step of the workflow</li>
+                <li>Some tasks can auto-create tickets or work orders for tracking</li>
+                <li>Each request gets a unique SR number (SR-YYYY-NNNN) and links to a support ticket</li>
+            </ul>
+
+            <h3>Request Status Flow</h3>
+            <ol>
+                <li><strong>Submitted</strong> — request created, awaiting processing</li>
+                <li><strong>Pending Approval</strong> — requires manager approval (if configured)</li>
+                <li><strong>Approved</strong> — approved, ready for fulfillment</li>
+                <li><strong>In Progress</strong> — fulfillment tasks being worked on</li>
+                <li><strong>Completed</strong> — all required tasks finished</li>
+            </ol>
+            <p>Requests can also be <strong>Cancelled</strong>, <strong>Rejected</strong>, or put <strong>On Hold</strong>.</p>
+
+            <h3>Example Use Cases</h3>
+            <ul>
+                <li><em>&quot;Set up a new starter for next Monday&quot;</em> — triggers onboarding workflow with laptop provisioning, account creation, desk assignment</li>
+                <li><em>&quot;Move John to Desk B14&quot;</em> — triggers desk move workflow with IT equipment relocation and access updates</li>
+                <li><em>&quot;Request standing desk approval&quot;</em> — triggers equipment request with approval step</li>
+                <li><em>&quot;What services are available?&quot;</em> — shows the active service catalog</li>
+            </ul>
+
+            <h3>Service Categories</h3>
+            <table className="doc-table">
+                <thead><tr><th>Category</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>Onboarding</td><td>New starter setup, account provisioning</td></tr>
+                    <tr><td>Offboarding</td><td>Leaver processing, equipment return</td></tr>
+                    <tr><td>Workplace</td><td>General workplace requests</td></tr>
+                    <tr><td>IT Access</td><td>System access, permissions, credentials</td></tr>
+                    <tr><td>Equipment</td><td>Hardware and equipment requests</td></tr>
+                    <tr><td>Facilities</td><td>Building and facilities services</td></tr>
+                    <tr><td>AV Support</td><td>Audio-visual equipment and support</td></tr>
+                    <tr><td>Security</td><td>Physical and digital security requests</td></tr>
+                    <tr><td>Moves</td><td>Desk, office, or equipment relocations</td></tr>
+                    <tr><td>General</td><td>Other service requests</td></tr>
+                </tbody>
+            </table>
+        </section>
+    );
+}
+
 function SchemaSection() {
     const groups = [
         {
             title: 'Core Infrastructure',
             tables: [
                 { name: 'companies', desc: 'Employers, clients, and vendors', cols: 'id, name, type (employer|client|vendor), category, city, country, website, email, phone, notes' },
-                { name: 'sites', desc: 'Client sites/offices', cols: 'id, name, client_id, timezone, city, country, address, notes' },
-                { name: 'rooms', desc: 'Spaces within sites', cols: 'id, site_id, name, code, capacity, description' },
+                { name: 'sites', desc: 'Client sites/buildings', cols: 'id, name, client_id, timezone, city, country, address, notes' },
+                { name: 'floors', desc: 'Physical floors within a site', cols: 'id, site_id, name, code, level_number, description' },
+                { name: 'zones', desc: 'Named areas within a floor', cols: 'id, floor_id, name, code, zone_type (general|office|common_area|restricted|storage|technical|reception|outdoor), description' },
+                { name: 'rooms', desc: 'Spaces within sites', cols: 'id, site_id, floor_id, zone_id, name, code, capacity, location, has_av, features, description' },
+                { name: 'desks', desc: 'Hot desks / workstations', cols: 'id, site_id, floor_id, zone_id, name, code, location, has_monitor, has_docking_station' },
+                { name: 'parking_spaces', desc: 'Parking spots', cols: 'id, site_id, floor_id, zone_id, name, code, location, space_type (standard|accessible|ev_charging|motorcycle)' },
+                { name: 'lockers', desc: 'Personal storage lockers', cols: 'id, site_id, floor_id, zone_id, name, code, location, locker_size (small|standard|large)' },
+                { name: 'bookings', desc: 'Resource reservations', cols: 'id, resource_type, resource_id, site_id, booked_by_person_id, title, start_time, end_time, status (confirmed|cancelled|completed|no_show), source (chat|email), notes' },
             ]
         },
         {
@@ -891,7 +1364,11 @@ function SchemaSection() {
         {
             title: 'Support & Issues',
             tables: [
-                { name: 'tickets', desc: 'Support tickets and service requests', cols: 'id, title, description, ticket_type (incident|service_request|question|access_request), priority (low|medium|high|critical), status (open|in_progress|pending|resolved|closed), source, requester_person_id, assigned_to_person_id, site_id, related_asset_id, opened_at, resolved_at, closed_at, due_date, important' },
+                { name: 'tickets', desc: 'Support tickets and service requests', cols: 'id, title, description, ticket_type (incident|service_request|question|access_request), priority (low|medium|high|critical), status (open|in_progress|pending|resolved|closed), source, requester_person_id, assigned_to_person_id, site_id, related_asset_id, opened_at, resolved_at, closed_at, due_date, email_thread_id, keywords, important' },
+                { name: 'ticket_replies', desc: 'Email replies on tickets (inbound and outbound)', cols: 'id, ticket_id, reply_body, reply_by_person_id, reply_to_email, direction (outbound|inbound), email_message_id, created_at' },
+                { name: 'ticket_watchers', desc: 'People CC\'d on ticket email updates', cols: 'id, ticket_id, person_id, added_by_person_id, created_at' },
+                { name: 'ticket_attachments', desc: 'Images attached to tickets (stored as AVIF in S3)', cols: 'id, ticket_id, filename, original_filename, content_type, file_size_bytes, storage_path (S3 key), uploaded_by_person_id, created_at' },
+                { name: 'ticket_timeline', desc: 'Audit trail of all ticket events', cols: 'id, ticket_id, event_type (created|replied|status_changed|priority_changed|assigned|watcher_added|watcher_removed|attachment_added), actor_person_id, old_value, new_value, detail, created_at' },
                 { name: 'technical_issues', desc: 'Diagnosed technical problems', cols: 'id, title, description, issue_type (hardware|software|network|av|printing|access|other), severity, recurrence_status (one_off|intermittent|recurring|resolved), known_issue, knowledgeworthy, site_id, room_id, related_asset_id, important' },
                 { name: 'issue_occurrences', desc: 'Individual sightings of recurring issues', cols: 'id, issue_id, occurred_at, reported_by_person_id, notes' },
             ]
@@ -945,6 +1422,38 @@ function SchemaSection() {
                 { name: 'workflows', desc: 'Step-by-step procedures', cols: 'id, title, description, steps, status (draft|published|archived), contact_person_id, keywords, important' },
                 { name: 'tags', desc: 'Tag definitions', cols: 'id, name' },
                 { name: 'entity_tags', desc: 'Tag assignments', cols: 'id, tag_id, entity_table, entity_id' },
+            ]
+        },
+        {
+            title: 'Preventive Maintenance',
+            tables: [
+                { name: 'maintenance_tasks', desc: 'Reusable maintenance activity templates', cols: 'id, name, category, estimated_duration_minutes, instructions, vendor_id, estimated_cost' },
+                { name: 'checklist_templates', desc: 'Reusable checklist definitions', cols: 'id, name, checklist_type, version, is_active' },
+                { name: 'checklist_template_items', desc: 'Items within a checklist', cols: 'id, checklist_template_id, item_text, item_type, numeric_min/max, failure_creates_ticket' },
+                { name: 'maintenance_plans', desc: 'Scheduled task groups with recurrence', cols: 'id, name, plan_type, recurrence, next_due_date, lead_time_days, seasonal_months, compliance_standard' },
+                { name: 'maintenance_plan_tasks', desc: 'Junction: tasks in plans', cols: 'maintenance_plan_id, maintenance_task_id, sort_order' },
+                { name: 'inspections', desc: 'Recurring inspection schedules', cols: 'id, name, inspection_type, recurrence, next_due_date, certification_required' },
+                { name: 'work_orders', desc: 'Actual maintenance work instances', cols: 'id, wo_number, title, wo_type, status, source, due_date, estimated/actual_cost, findings, resolution' },
+                { name: 'inspection_records', desc: 'Performed inspection instances', cols: 'id, inspection_id, title, status, overall_result, findings, corrective_actions' },
+                { name: 'checklist_responses', desc: 'Checklist answers (WO or inspection)', cols: 'work_order_id|inspection_record_id, response_*, is_within_spec, generated_ticket_id' },
+                { name: 'work_order_parts', desc: 'Inventory consumed during maintenance', cols: 'work_order_id, inventory_item_id, quantity_used, unit_cost' },
+            ]
+        },
+        {
+            title: 'Procurement',
+            tables: [
+                { name: 'procurement_requests', desc: 'Purchase requests from team members', cols: 'id, requested_by_person_id, item_description, value, brand, model, vendor, status, notes, reviewed_by_person_id, reviewed_at' },
+                { name: 'procurement_updates', desc: 'Audit trail and comments on requests', cols: 'id, procurement_request_id, author_person_id, event_type, old_value, new_value, note' },
+            ]
+        },
+        {
+            title: 'Service Catalog',
+            tables: [
+                { name: 'service_catalog', desc: 'Available services that can be requested', cols: 'id, name, description, category, estimated_fulfillment_days, requires_approval, approval_person_id, owner_person_id, owner_team_id, keywords, status' },
+                { name: 'service_request_templates', desc: 'Form fields for service intake', cols: 'id, service_catalog_id, field_name, field_label, field_type, is_required, select_options, sort_order' },
+                { name: 'request_fulfillment_tasks', desc: 'Workflow steps to fulfill a service', cols: 'id, service_catalog_id, title, sort_order, assigned_person_id, depends_on_task_id, auto_create_ticket, auto_create_work_order, checklist_template_id' },
+                { name: 'service_requests', desc: 'Submitted service requests', cols: 'id, sr_number, service_catalog_id, ticket_id, requester_person_id, on_behalf_of_person_id, status, form_data (JSONB), priority, due_date' },
+                { name: 'service_request_task_progress', desc: 'Per-request task completion tracking', cols: 'id, service_request_id, fulfillment_task_id, status, assigned_person_id, linked_ticket_id, linked_work_order_id' },
             ]
         },
         {
@@ -1023,6 +1532,41 @@ function ScopeSection() {
 
             <div className="doc-callout">
                 <strong>Single-site focus:</strong> Each TrueCore.cloud instance is configured for one client site. While data for multiple sites can exist in the database, the AI defaults all operations to the configured home site.
+            </div>
+        </section>
+    );
+}
+
+function AdminDashboardSection() {
+    return (
+        <section id="admin-dashboard" className="doc-section">
+            <h2>Admin Dashboard</h2>
+            <p>
+                TrueCore.cloud includes a platform-level admin dashboard accessible only to the platform owner (<span className="doc-code">gocandan@gmail.com</span>). This provides a cross-tenant overview of the entire platform, distinct from the per-instance dashboard available to all users.
+            </p>
+
+            <h3>Accessing the Admin Dashboard</h3>
+            <p>
+                When logged in as the platform admin, an <strong>Admin</strong> link appears in the navigation bar. Click it or navigate to <span className="doc-code">/admin</span> to open the dashboard. Non-admin users will see an "Access Denied" message.
+            </p>
+
+            <h3>Available Data</h3>
+            <ul>
+                <li><strong>Platform Stats</strong> &mdash; Total users, active instances, total queries processed, total tokens consumed, and query pack purchases</li>
+                <li><strong>Token Usage Chart</strong> &mdash; Line chart showing daily input and output token consumption over the last 30 days</li>
+                <li><strong>Daily Queries Chart</strong> &mdash; Bar chart showing query volume per day</li>
+                <li><strong>Users Table</strong> &mdash; All registered users with email, name, verification status, instance count, and join date (sortable columns)</li>
+                <li><strong>Instances Table</strong> &mdash; All instances with tier, status, query usage, member count, owner, and active add-ons</li>
+                <li><strong>Payments Table</strong> &mdash; Recent query pack purchases and subscription events with user and instance details</li>
+            </ul>
+
+            <h3>Security</h3>
+            <p>
+                Access is enforced on both the backend and frontend. All <span className="doc-code">/api/admin/*</span> endpoints require a valid JWT belonging to the platform admin email. Non-admin requests receive a <span className="doc-code">403 Forbidden</span> response. Sensitive fields like password hashes and Google IDs are never exposed.
+            </p>
+
+            <div className="doc-callout">
+                <strong>Configuration:</strong> The admin email is set via the <span className="doc-code">ADMIN_EMAIL</span> environment variable in your <span className="doc-code">.env</span> file. It defaults to <span className="doc-code">gocandan@gmail.com</span>.
             </div>
         </section>
     );
@@ -1189,16 +1733,6 @@ function QATestingSection() {
                         <td>Pagination</td>
                         <td>Select a table with more than 50 rows; click Next/Previous</td>
                         <td>Data pages through 50 rows at a time; page indicator updates</td>
-                    </tr>
-                    <tr>
-                        <td>Insert row</td>
-                        <td>Click "Add Row", fill in the form, and submit</td>
-                        <td>New row appears in the data grid; row count increments</td>
-                    </tr>
-                    <tr>
-                        <td>Delete row</td>
-                        <td>Hover over a row and click the red delete button</td>
-                        <td>Row is removed from the grid; row count decrements</td>
                     </tr>
                     <tr>
                         <td>Create table</td>
@@ -1370,7 +1904,7 @@ function RoadmapSection() {
             <ul>
                 <li><strong>Approval Workflow</strong> — Admin-defined rules, automatic query interception, approve/reject pending operations</li>
                 <li><strong>CSV Import</strong> — AI-powered column mapping with validation, approval integration, and retry on failure</li>
-                <li><strong>Table Creation / Column Addition</strong> — Backend routes and frontend modals for creating new tables and adding columns</li>
+                <li><strong>Table Creation</strong> — Backend routes and frontend modal for creating new tables</li>
                 <li><strong>SQL Safety Policies</strong> — Destructive operations (DROP, TRUNCATE, ALTER DROP/RENAME) are system-blocked; protected tables require WHERE clauses</li>
                 <li><strong>Excel Generation</strong> — AI can generate downloadable .xlsx files from query results</li>
                 <li><strong>User Invitations</strong> — Instance owners can invite new users via email</li>
@@ -1385,6 +1919,22 @@ function RoadmapSection() {
                 <li><strong>Tag System UI</strong> — Apply and filter tags across entities (articles, tables, records)</li>
                 <li><strong>Workflow Documentation</strong> — Viewer/editor for standard operating procedures and workflows</li>
                 <li><strong>Site-Specific Notes</strong> — Miscellaneous knowledge and notes interface for capturing institutional knowledge</li>
+            </ul>
+
+            <h3>Phase 3.5: Preventive Maintenance & Inspections (Complete)</h3>
+            <div className="doc-callout doc-callout--tip">
+                <strong>Goal:</strong> Full preventive maintenance, inspection, and work order management for Facilities and Workplace teams.
+            </div>
+            <ul>
+                <li><s><strong>Maintenance Task Templates</strong></s> — Reusable activity definitions with instructions, cost estimates, and vendor links</li>
+                <li><s><strong>Checklist Templates</strong></s> — Multi-type inspection forms (pass/fail, numeric, text, photo, rating) with auto-escalation</li>
+                <li><s><strong>Maintenance Plans</strong></s> — Recurring schedules from daily to annual with seasonal filtering</li>
+                <li><s><strong>Inspections</strong></s> — Separate recurring inspection schedules with compliance tracking</li>
+                <li><s><strong>Work Orders</strong></s> — Auto-generated from plans, with full lifecycle, cost, and parts tracking</li>
+                <li><s><strong>Inspection Records</strong></s> — Formal inspection instances with pass/fail results and corrective actions</li>
+                <li><s><strong>Background Scheduling</strong></s> — Auto-generation of work orders and inspections with reminder creation</li>
+                <li><s><strong>Dashboard Integration</strong></s> — Active and overdue work order stats on dashboard</li>
+                <li><s><strong>Daily Report Integration</strong></s> — Overdue and upcoming maintenance in daily reports</li>
             </ul>
 
             <h3>Phase 4: Production Readiness (In Progress)</h3>

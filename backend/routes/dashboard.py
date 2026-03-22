@@ -43,11 +43,24 @@ async def overview(ctx: InstanceContext = Depends(get_current_instance)):
         "(SELECT COUNT(*) FROM work_logs WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM assets WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM inventory_transactions WHERE important=1 AND instance_id = ?) + "
-        "(SELECT COUNT(*) FROM projects WHERE important=1 AND instance_id = ?) AS important_items",
+        "(SELECT COUNT(*) FROM projects WHERE important=1 AND instance_id = ?) AS important_items, "
+        "(SELECT COUNT(*) FROM work_orders WHERE status IN ('open','scheduled','in_progress') AND instance_id = ?) AS active_work_orders, "
+        "(SELECT COUNT(*) FROM work_orders WHERE status = 'overdue' AND instance_id = ?) AS overdue_work_orders, "
+        "(SELECT COUNT(*) FROM maintenance_plans WHERE status = 'active' AND instance_id = ?) AS active_maintenance_plans, "
+        "(SELECT COUNT(*) FROM inspections WHERE status = 'active' AND instance_id = ?) AS active_inspections, "
+        "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'deployed' AND instance_id = ?) AS deployed_assets, "
+        "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'spare' AND instance_id = ?) AS spare_assets, "
+        "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'in_repair' AND instance_id = ?) AS in_repair_assets, "
+        "(SELECT COUNT(*) FROM assets WHERE criticality IN ('high', 'critical') AND lifecycle_status NOT IN ('disposed', 'decommissioned') AND instance_id = ?) AS critical_assets, "
+        "(SELECT COUNT(*) FROM assets WHERE warranty_expiry IS NOT NULL AND warranty_expiry <= CURRENT_DATE + INTERVAL '30 days' AND lifecycle_status NOT IN ('disposed', 'decommissioned') AND instance_id = ?) AS warranty_expiring_30d, "
+        "(SELECT COUNT(*) FROM licenses WHERE status = 'active' AND expiry_date IS NOT NULL AND expiry_date <= CURRENT_DATE + INTERVAL '30 days' AND instance_id = ?) AS licenses_expiring_30d, "
+        "(SELECT COUNT(*) FROM service_requests WHERE status IN ('submitted','pending_approval','approved','in_progress') AND instance_id = ?) AS active_service_requests",
         [ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
          ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
          ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
-         ctx.instance_id],
+         ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
+         ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
+         ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id],
         instance_id=ctx.instance_id,
     )[0]
     push = _query(

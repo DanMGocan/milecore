@@ -11,6 +11,7 @@ from backend.config import (
     STRIPE_PRICE_EMAIL_ADDON,
     STRIPE_PRICE_DAILY_REPORTS_ADDON,
     STRIPE_PRICE_INBOUND_EMAIL_ADDON,
+    STRIPE_PRICE_BOOKINGS_ADDON,
     STRIPE_PRICE_QUERY_PACK,
 )
 from backend.database import execute_query
@@ -287,6 +288,38 @@ def toggle_daily_reports_addon(instance_id: int, enable: bool) -> dict:
     return {"daily_reports_addon": enable}
 
 
+def toggle_bookings_addon(instance_id: int, enable: bool) -> dict:
+    """Add or remove the bookings addon line item on the subscription."""
+    if not _stripe_configured():
+        execute_query(
+            "UPDATE instances SET bookings_addon = ? WHERE id = ?",
+            [enable, instance_id],
+            instance_id=None,
+        )
+        return {"skipped": True, "bookings_addon": enable}
+
+    sub_id = _get_subscription_id(instance_id)
+    if not sub_id:
+        return {"error": "No subscription for this instance"}
+
+    existing = _find_subscription_item(sub_id, STRIPE_PRICE_BOOKINGS_ADDON)
+
+    if enable and not existing:
+        stripe.SubscriptionItem.create(subscription=sub_id, price=STRIPE_PRICE_BOOKINGS_ADDON, quantity=1)
+    elif not enable and existing:
+        stripe.SubscriptionItem.delete(existing["id"])
+
+    execute_query(
+        "UPDATE instances SET bookings_addon = ? WHERE id = ?",
+        [enable, instance_id],
+        instance_id=None,
+    )
+
+    event_type = "addon_enabled" if enable else "addon_disabled"
+    _log_event(instance_id, event_type, "Bookings addon")
+    return {"bookings_addon": enable}
+
+
 # ---------------------------------------------------------------------------
 # Query pack (one-time purchase)
 # ---------------------------------------------------------------------------
@@ -430,7 +463,7 @@ def get_billing_status(instance_id: int) -> dict:
     """Return billing info for an instance."""
     inst = execute_query(
         "SELECT i.stripe_subscription_id, i.billing_owner_id, i.query_count, i.query_limit, "
-        "i.email_addon, i.inbound_email_addon, i.daily_reports_addon, i.query_pool_reset_at, i.email_signature, i.tier "
+        "i.email_addon, i.inbound_email_addon, i.daily_reports_addon, i.bookings_addon, i.query_pool_reset_at, i.email_signature, i.tier "
         "FROM instances i WHERE i.id = ?",
         [instance_id],
         instance_id=None,
@@ -475,6 +508,7 @@ def get_billing_status(instance_id: int) -> dict:
         "email_addon": bool(row["email_addon"]),
         "inbound_email_addon": bool(row.get("inbound_email_addon", False)),
         "daily_reports_addon": bool(row["daily_reports_addon"]),
+        "bookings_addon": bool(row.get("bookings_addon", False)),
         "email_signature": row["email_signature"] or "",
         "query_pool_reset_at": str(row["query_pool_reset_at"]) if row["query_pool_reset_at"] else None,
         "has_subscription": bool(row["stripe_subscription_id"]),

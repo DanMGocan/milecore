@@ -89,107 +89,6 @@ function CreateTableModal({ open, onClose, onCreated }) {
     );
 }
 
-function AddColumnModal({ open, onClose, tableName, onAdded }) {
-    const [name, setName] = useState('');
-    const [type, setType] = useState('TEXT');
-
-    const submit = async () => {
-        if (!name.trim()) return;
-        try {
-            const res = await fetch(`/api/tables/${tableName}/columns`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name.trim(), type }),
-            });
-            if (!res.ok) { const d = await res.json(); throw new Error(d.detail); }
-            setName(''); setType('TEXT');
-            onAdded();
-            onClose();
-        } catch (err) { alert(err.message); }
-    };
-
-    return (
-        <Modal open={open} onClose={onClose} title={`Add Column to ${tableName}`}>
-            <div className="form-row">
-                <div className="form-group">
-                    <label>Column Name</label>
-                    <input
-                        className="form-input" value={name}
-                        onChange={e => setName(e.target.value)} placeholder="column_name"
-                    />
-                </div>
-                <div className="form-group" style={{ maxWidth: 140 }}>
-                    <label>Type</label>
-                    <select
-                        className="form-input" value={type}
-                        onChange={e => setType(e.target.value)}
-                    >
-                        <option value="TEXT">TEXT</option>
-                        <option value="INTEGER">INTEGER</option>
-                        <option value="REAL">REAL</option>
-                        <option value="BOOLEAN">BOOLEAN</option>
-                        <option value="TIMESTAMP">TIMESTAMP</option>
-                        <option value="DATE">DATE</option>
-                    </select>
-                </div>
-            </div>
-            <div className="modal-actions">
-                <button className="btn" onClick={onClose}>Cancel</button>
-                <button className="btn btn-primary" onClick={submit}>Add</button>
-            </div>
-        </Modal>
-    );
-}
-
-function InsertRowModal({ open, onClose, tableName, columns, onInserted }) {
-    const editableCols = (columns || []).filter(c => c.name !== 'id' && c.name !== 'rowid');
-    const initial = {};
-    editableCols.forEach(c => { initial[c.name] = ''; });
-    const [data, setData] = useState(initial);
-
-    useEffect(() => {
-        const init = {};
-        editableCols.forEach(c => { init[c.name] = ''; });
-        setData(init);
-    }, [tableName, open]);
-
-    const submit = async () => {
-        const filtered = {};
-        Object.entries(data).forEach(([k, v]) => { if (v !== '') filtered[k] = v; });
-        if (Object.keys(filtered).length === 0) return;
-        try {
-            const res = await fetch(`/api/tables/${tableName}/rows`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: filtered }),
-            });
-            if (!res.ok) { const d = await res.json(); throw new Error(d.detail); }
-            onInserted();
-            onClose();
-        } catch (err) { alert(err.message); }
-    };
-
-    return (
-        <Modal open={open} onClose={onClose} title={`Insert Row into ${tableName}`}>
-            {editableCols.map(col => (
-                <div key={col.name} className="form-group">
-                    <label>{col.name} ({col.type})</label>
-                    <input
-                        className="form-input"
-                        value={data[col.name] || ''}
-                        onChange={e => setData(prev => ({ ...prev, [col.name]: e.target.value }))}
-                        placeholder={col.default_value ? `Default: ${col.default_value}` : ''}
-                    />
-                </div>
-            ))}
-            <div className="modal-actions">
-                <button className="btn" onClick={onClose}>Cancel</button>
-                <button className="btn btn-primary" onClick={submit}>Insert</button>
-            </div>
-        </Modal>
-    );
-}
-
 export function BrowserPage() {
     const [tables, setTables] = useState([]);
     const [selected, setSelected] = useState(null);
@@ -202,8 +101,6 @@ export function BrowserPage() {
     const limit = 50;
 
     const [showCreate, setShowCreate] = useState(false);
-    const [showAddCol, setShowAddCol] = useState(false);
-    const [showInsert, setShowInsert] = useState(false);
 
     const loadTables = async () => {
         try {
@@ -236,16 +133,6 @@ export function BrowserPage() {
         setSidebarOpen(false);
     };
 
-    const deleteRow = async (rowId) => {
-        if (!confirm('Delete this row?')) return;
-        try {
-            const res = await fetch(`/api/tables/${selected}/rows/${rowId}`, { method: 'DELETE' });
-            if (!res.ok) { const d = await res.json(); throw new Error(d.detail); }
-            loadTable(selected, offset);
-        } catch (err) { alert(err.message); }
-    };
-
-;
 
     useEffect(() => { loadTables(); }, []);
 
@@ -305,8 +192,6 @@ export function BrowserPage() {
                                 <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 400 }}>({total} rows)</span>
                             </h2>
                             <div className="toolbar-actions">
-                                <button className="btn btn-sm" onClick={() => setShowInsert(true)}>+ Row</button>
-                                <button className="btn btn-sm" onClick={() => setShowAddCol(true)}>+ Column</button>
                                 <button className="btn btn-sm" onClick={() => loadTable(selected, offset)}>Refresh</button>
                             </div>
                         </div>
@@ -319,7 +204,6 @@ export function BrowserPage() {
                                     <thead>
                                         <tr>
                                             {columns.map(c => <th key={c}>{c}</th>)}
-                                            <th scope="col">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -330,15 +214,6 @@ export function BrowserPage() {
                                                         {row[c] != null ? String(row[c]) : ''}
                                                     </td>
                                                 ))}
-                                                <td>
-                                                    <button
-                                                        className="delete-row-btn"
-                                                        onClick={() => deleteRow(row.rowid || row.id)}
-                                                        aria-label={`Delete row ${row.rowid || row.id}`}
-                                                    >
-                                                        Del
-                                                    </button>
-                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -392,18 +267,6 @@ export function BrowserPage() {
                 open={showCreate} onClose={() => setShowCreate(false)}
                 onCreated={() => { loadTables(); }}
             />
-            {selected && (
-                <AddColumnModal
-                    open={showAddCol} onClose={() => setShowAddCol(false)}
-                    tableName={selected} onAdded={() => loadTable(selected, offset)}
-                />
-            )}
-            {selected && (
-                <InsertRowModal
-                    open={showInsert} onClose={() => setShowInsert(false)}
-                    tableName={selected} columns={schema} onInserted={() => loadTable(selected, offset)}
-                />
-            )}
         </div>
     );
 }

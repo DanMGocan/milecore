@@ -19,6 +19,11 @@ from backend.routes.dashboard import router as dashboard_router
 from backend.routes.billing_routes import router as billing_router
 from backend.routes.inbound_email_routes import router as inbound_email_router
 from backend.routes.reminders_routes import router as reminders_router
+from backend.routes.admin_routes import router as admin_router
+from backend.routes.ticket_routes import router as ticket_router
+from backend.routes.maintenance_routes import router as maintenance_router
+from backend.routes.procurement_routes import router as procurement_router
+from backend.routes.asset_routes import router as asset_router
 
 
 async def _reminder_check_loop():
@@ -60,15 +65,40 @@ async def _daily_report_loop():
             print(f"[{datetime.now().isoformat()}] Daily report error: {e}")
 
 
+async def _maintenance_check_loop():
+    """Check for due maintenance plans and inspections every 5 minutes."""
+    while True:
+        await asyncio.sleep(300)
+        try:
+            from backend.maintenance_scheduler import (
+                process_due_maintenance_plans,
+                process_due_inspections,
+                check_overdue_work_orders,
+            )
+            wo_count = process_due_maintenance_plans()
+            if wo_count > 0:
+                print(f"[{datetime.now().isoformat()}] Generated {wo_count} work order(s).")
+            ir_count = process_due_inspections()
+            if ir_count > 0:
+                print(f"[{datetime.now().isoformat()}] Generated {ir_count} inspection record(s).")
+            overdue = check_overdue_work_orders()
+            if overdue > 0:
+                print(f"[{datetime.now().isoformat()}] Marked {overdue} work order(s) as overdue.")
+        except Exception as e:
+            print(f"[{datetime.now().isoformat()}] Maintenance check error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize connection pool on startup
     init_pool(DATABASE_URL)
     daily_task = asyncio.create_task(_daily_report_loop())
     reminder_task = asyncio.create_task(_reminder_check_loop())
+    maintenance_task = asyncio.create_task(_maintenance_check_loop())
     yield
     daily_task.cancel()
     reminder_task.cancel()
+    maintenance_task.cancel()
     shutdown_pool()
 
 
@@ -99,6 +129,11 @@ def create_app() -> FastAPI:
     app.include_router(billing_router, prefix="/api")
     app.include_router(inbound_email_router, prefix="/api")
     app.include_router(reminders_router, prefix="/api")
+    app.include_router(admin_router, prefix="/api")
+    app.include_router(ticket_router, prefix="/api")
+    app.include_router(maintenance_router, prefix="/api")
+    app.include_router(procurement_router, prefix="/api")
+    app.include_router(asset_router, prefix="/api")
 
     # Serve Vite build output
     frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
