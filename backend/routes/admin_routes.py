@@ -32,7 +32,9 @@ async def admin_stats(_user: AuthUser = Depends(require_platform_admin)):
     )
     tokens = execute_query(
         "SELECT COALESCE(SUM(total_input_tokens), 0) AS input, "
-        "COALESCE(SUM(total_output_tokens), 0) AS output "
+        "COALESCE(SUM(total_output_tokens), 0) AS output, "
+        "COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation, "
+        "COALESCE(SUM(cache_read_tokens), 0) AS cache_read "
         "FROM query_token_log",
         instance_id=None,
     )
@@ -41,7 +43,7 @@ async def admin_stats(_user: AuthUser = Depends(require_platform_admin)):
         instance_id=None,
     )
 
-    token_row = tokens["rows"][0] if tokens.get("rows") else {"input": 0, "output": 0}
+    token_row = tokens["rows"][0] if tokens.get("rows") else {"input": 0, "output": 0, "cache_creation": 0, "cache_read": 0}
     return {
         "total_users": users["rows"][0]["cnt"] if users.get("rows") else 0,
         "total_instances": instances["rows"][0]["cnt"] if instances.get("rows") else 0,
@@ -49,6 +51,8 @@ async def admin_stats(_user: AuthUser = Depends(require_platform_admin)):
         "total_queries": queries["rows"][0]["cnt"] if queries.get("rows") else 0,
         "total_input_tokens": token_row["input"],
         "total_output_tokens": token_row["output"],
+        "total_cache_creation_tokens": token_row["cache_creation"],
+        "total_cache_read_tokens": token_row["cache_read"],
         "total_purchases": purchases["rows"][0]["cnt"] if purchases.get("rows") else 0,
     }
 
@@ -137,6 +141,8 @@ async def admin_token_usage(
         "SELECT DATE(created_at) AS date, "
         "SUM(total_input_tokens) AS input_tokens, "
         "SUM(total_output_tokens) AS output_tokens, "
+        "SUM(cache_creation_tokens) AS cache_creation_tokens, "
+        "SUM(cache_read_tokens) AS cache_read_tokens, "
         "SUM(api_calls) AS api_calls, "
         "SUM(queries_consumed) AS queries "
         "FROM query_token_log "

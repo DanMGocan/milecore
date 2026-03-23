@@ -57,6 +57,10 @@ INBOUND_BOOKING_EMAIL_PREFIX = os.getenv("INBOUND_BOOKING_EMAIL_PREFIX", "book-"
 # Token-based query metering
 QUERY_TOKEN_THRESHOLD = int(os.getenv("QUERY_TOKEN_THRESHOLD", "80000"))
 
+# Token optimization: conversation history and result caps
+MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "20"))
+MAX_TOOL_RESULT_CHARS = int(os.getenv("MAX_TOOL_RESULT_CHARS", "32000"))
+
 # Email rate limiting (outbound via chat tool)
 EMAIL_RATE_LIMIT_PER_HOUR = int(os.getenv("EMAIL_RATE_LIMIT_PER_HOUR", "20"))
 

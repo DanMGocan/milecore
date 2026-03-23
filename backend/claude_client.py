@@ -5,7 +5,8 @@ import os
 import re
 import time
 import uuid
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Generator
 
 import anthropic
@@ -20,12 +21,14 @@ from backend.config import (
     BREVO_SENDER_EMAIL,
     BREVO_SENDER_NAME,
     EMAIL_RATE_LIMIT_PER_HOUR,
+    MAX_HISTORY_MESSAGES,
+    MAX_TOOL_RESULT_CHARS,
     QUERY_TOKEN_THRESHOLD,
 )
 from backend.database import execute_query, get_home_site, get_schema_ddl, validate_query
 from backend.email_sender import send_email as smtp_send_email
 from backend.routes.upload import get_chat_attachment_path, resolve_s3_attachment_for_email
-from backend.prompts import SYSTEM_TEMPLATE, TOOLS
+from backend.prompts import SYSTEM_STATIC, CONTEXT_TEMPLATE, TOOLS
 
 _TABLE_RE = re.compile(
     r"(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|INTO)\s+(\w+)",
@@ -33,6 +36,51 @@ _TABLE_RE = re.compile(
 )
 
 _OP_KEYWORDS = {"INSERT", "UPDATE", "DELETE"}
+
+
+def _json_default(obj: Any) -> Any:
+    """Handle non-serializable types from DB results."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def _dumps(obj: Any) -> str:
+    return json.dumps(obj, default=_json_default)
+
+
+# ---------------------------------------------------------------------------
+# Token-optimization helpers
+# ---------------------------------------------------------------------------
+
+_ADMIN_TOOLS = {"manage_approval_rules", "review_approvals"}
+_OWNER_TOOLS = {"invite_user"}
+
+
+def _filter_tools(user_role: str) -> list[dict]:
+    """Return the TOOLS list filtered by user role."""
+    if user_role == "owner":
+        return TOOLS
+    if user_role == "admin":
+        return [t for t in TOOLS if t["name"] not in _OWNER_TOOLS]
+    return [t for t in TOOLS if t["name"] not in (_ADMIN_TOOLS | _OWNER_TOOLS)]
+
+
+def _trim_history(history: list[dict], max_messages: int) -> list[dict]:
+    """Keep only the last *max_messages* entries from conversation history."""
+    if len(history) <= max_messages:
+        return history
+    return history[-max_messages:]
+
+
+def _truncate_tool_results(tool_results: list[dict], max_chars: int) -> None:
+    """Truncate oversized tool-result content strings in-place."""
+    for tr in tool_results:
+        content = tr.get("content")
+        if isinstance(content, str) and len(content) > max_chars:
+            tr["content"] = content[:max_chars] + "... [truncated]"
 
 
 def _find_matching_rule(sql: str, rules: list[dict]) -> dict | None:
@@ -219,7 +267,12 @@ def _build_current_user_section(current_user: dict[str, Any] | None) -> str:
 _prompt_cache: dict[int, dict] = {}
 
 
-def _build_system_prompt(user_role: str = "admin", current_user: dict[str, Any] | None = None, instance_id: int = 1) -> str:
+def _build_system_blocks(user_role: str = "admin", current_user: dict[str, Any] | None = None, instance_id: int = 1) -> list[dict]:
+    """Return two system content blocks: static (cached) + dynamic context (uncached).
+
+    The static block is byte-for-byte identical across all users, roles, and
+    instances, maximising Anthropic prompt cache reuse.
+    """
     now = time.time()
     cache = _prompt_cache.get(instance_id, {})
     if now - cache.get("ts", 0) > 60:
@@ -227,8 +280,8 @@ def _build_system_prompt(user_role: str = "admin", current_user: dict[str, Any] 
         cache["home_site"] = _build_home_site_section(instance_id)
         cache["ts"] = now
         _prompt_cache[instance_id] = cache
-    return SYSTEM_TEMPLATE.format(
-        schema_ddl=_get_cached_schema(instance_id),
+    context = CONTEXT_TEMPLATE.format(
+        instance_id=instance_id,
         today=date.today().isoformat(),
         sender_name=BREVO_SENDER_NAME,
         sender_email=BREVO_SENDER_EMAIL,
@@ -236,8 +289,12 @@ def _build_system_prompt(user_role: str = "admin", current_user: dict[str, Any] 
         user_role_section=_build_user_role_section(user_role),
         current_user_section=_build_current_user_section(current_user),
         approval_section=cache["approval"],
-        instance_id=instance_id,
+        schema_ddl=_get_cached_schema(instance_id),
     )
+    return [
+        {"type": "text", "text": SYSTEM_STATIC, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": context},
+    ]
 
 
 def _build_content(response) -> list[dict[str, Any]]:
@@ -283,12 +340,12 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             if tool_name == "execute_sql" and sql_upper.startswith(("DROP", "TRUNCATE", "ALTER")):
                 result = {"error": "DROP, TRUNCATE, and ALTER statements are system-blocked and cannot be executed."}
                 sql_log.append({"tool": tool_name, "sql": sql, "explanation": explanation, "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
             if tool_name == "create_table" and not sql_upper.startswith("CREATE"):
                 result = {"error": "The create_table tool can only be used for CREATE TABLE statements."}
                 sql_log.append({"tool": tool_name, "sql": sql, "explanation": explanation, "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
 
             # Check if this is a data write that should go through approval
@@ -314,7 +371,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
                             "message": "This query was NOT executed. It has been queued for admin approval because it matched an active approval rule. Tell the user their request is pending approval.",
                         }
                     sql_log.append({"tool": tool_name, "sql": sql, "explanation": explanation, "result": result})
-                    tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                    tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                     continue
 
             result = execute_query(sql, instance_id=instance_id)
@@ -334,7 +391,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "manage_approval_rules":
@@ -368,7 +425,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "submit_for_approval":
@@ -394,7 +451,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "review_approvals":
@@ -447,7 +504,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "import_csv":
@@ -502,7 +559,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "send_email":
@@ -517,14 +574,14 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             if addon_check.get("rows") and not addon_check["rows"][0].get("email_addon"):
                 result = {"error": "Email addon is not enabled for this instance. The instance owner can enable it from the billing section in the dashboard ($4.99/mo)."}
                 sql_log.append({"tool": "send_email", "action": f"Email to {inp['to_email']}: {inp['subject']}", "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
 
             # Rate limit check
             if not _check_email_rate_limit(instance_id):
                 result = {"error": f"Email rate limit exceeded. Maximum {EMAIL_RATE_LIMIT_PER_HOUR} emails per hour per instance. Please try again later."}
                 sql_log.append({"tool": "send_email", "action": f"Email to {inp['to_email']}: {inp['subject']} (rate limited)", "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
 
             # Append email signature if set
@@ -570,7 +627,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "generate_excel":
@@ -632,7 +689,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "manage_reminders":
@@ -725,7 +782,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "invite_user":
@@ -792,7 +849,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
         elif tool_name == "reply_to_ticket":
@@ -810,14 +867,14 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             if addon_check.get("rows") and not addon_check["rows"][0].get("email_addon"):
                 result = {"error": "Email addon is not enabled for this instance."}
                 sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id}", "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
 
             # Rate limit
             if not _check_email_rate_limit(instance_id):
                 result = {"error": f"Email rate limit exceeded ({EMAIL_RATE_LIMIT_PER_HOUR}/hr)."}
                 sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id} (rate limited)", "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
 
             # Look up ticket
@@ -832,7 +889,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             if not ticket_row.get("rows"):
                 result = {"error": f"Ticket #{ticket_id} not found."}
                 sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id}", "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
 
             ticket = ticket_row["rows"][0]
@@ -840,7 +897,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             if not requester_email:
                 result = {"error": f"Ticket #{ticket_id} has no requester email on file."}
                 sql_log.append({"tool": "reply_to_ticket", "action": f"Reply to ticket #{ticket_id}", "result": result})
-                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(result)})
+                tool_results.append({"type": "tool_result", "tool_use_id": block["id"], "content": _dumps(result)})
                 continue
 
             # Gather watchers
@@ -981,7 +1038,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block["id"],
-                "content": json.dumps(result),
+                "content": _dumps(result),
             })
 
     return tool_results
@@ -1045,11 +1102,14 @@ def chat_stream(
         yield f"event: done\ndata: {json.dumps({'sql_executed': []})}\n\n"
         return
 
-    system_prompt = _build_system_prompt(user_role, current_user, instance_id=instance_id)
-    messages = list(history) + [{"role": "user", "content": user_message}]
+    system_blocks = _build_system_blocks(user_role, current_user, instance_id=instance_id)
+    messages = _trim_history(list(history), MAX_HISTORY_MESSAGES) + [{"role": "user", "content": user_message}]
+    filtered_tools = _filter_tools(user_role)
     sql_log: list[dict[str, Any]] = []
     total_input_tokens = 0
     total_output_tokens = 0
+    total_cache_creation_tokens = 0
+    total_cache_read_tokens = 0
     api_calls = 0
 
     while True:
@@ -1057,8 +1117,8 @@ def chat_stream(
             with _get_client().messages.stream(
                 model=CLAUDE_MODEL,
                 max_tokens=4096,
-                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-                tools=TOOLS,
+                system=system_blocks,
+                tools=filtered_tools,
                 messages=messages,
             ) as stream:
                 for text_chunk in stream.text_stream:
@@ -1073,19 +1133,21 @@ def chat_stream(
         api_calls += 1
         total_input_tokens += response.usage.input_tokens
         total_output_tokens += response.usage.output_tokens
+        total_cache_creation_tokens += getattr(response.usage, "cache_creation_input_tokens", 0)
+        total_cache_read_tokens += getattr(response.usage, "cache_read_input_tokens", 0)
         assistant_content = _build_content(response)
         messages.append({"role": "assistant", "content": assistant_content})
 
         if response.stop_reason == "end_turn":
             state["history"] = messages
-            total_tokens = total_input_tokens + total_output_tokens
+            total_tokens = total_input_tokens + total_output_tokens + total_cache_creation_tokens + total_cache_read_tokens
             queries_consumed = max(1, math.ceil(total_tokens / QUERY_TOKEN_THRESHOLD))
             extra = queries_consumed - 1
             if extra > 0:
                 _charge_extra_queries(instance_id, extra)
             execute_query(
-                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?)",
-                [instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed],
+                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, cache_creation_tokens, cache_read_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [instance_id, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens, api_calls, queries_consumed],
                 instance_id=None,
             )
             yield f"event: done\ndata: {json.dumps({'sql_executed': sql_log, 'tokens_used': total_tokens, 'queries_consumed': queries_consumed})}\n\n"
@@ -1094,6 +1156,7 @@ def chat_stream(
         if response.stop_reason == "tool_use":
             sql_log_before = len(sql_log)
             tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id, current_user=current_user)
+            _truncate_tool_results(tool_results, MAX_TOOL_RESULT_CHARS)
             # Notify frontend about each SQL/file operation
             for entry in sql_log[sql_log_before:]:
                 if entry.get("tool") == "generate_excel":
@@ -1123,11 +1186,14 @@ def chat(
             ],
         }
 
-    system_prompt = _build_system_prompt(user_role, current_user, instance_id=instance_id)
-    messages = list(history) + [{"role": "user", "content": user_message}]
+    system_blocks = _build_system_blocks(user_role, current_user, instance_id=instance_id)
+    messages = _trim_history(list(history), MAX_HISTORY_MESSAGES) + [{"role": "user", "content": user_message}]
+    filtered_tools = _filter_tools(user_role)
     sql_log: list[dict[str, Any]] = []
     total_input_tokens = 0
     total_output_tokens = 0
+    total_cache_creation_tokens = 0
+    total_cache_read_tokens = 0
     api_calls = 0
 
     while True:
@@ -1135,8 +1201,8 @@ def chat(
             response = _get_client().messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=4096,
-                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-                tools=TOOLS,
+                system=system_blocks,
+                tools=filtered_tools,
                 messages=messages,
             )
         except (anthropic.RateLimitError, anthropic.AuthenticationError) as exc:
@@ -1147,19 +1213,21 @@ def chat(
         api_calls += 1
         total_input_tokens += response.usage.input_tokens
         total_output_tokens += response.usage.output_tokens
+        total_cache_creation_tokens += getattr(response.usage, "cache_creation_input_tokens", 0)
+        total_cache_read_tokens += getattr(response.usage, "cache_read_input_tokens", 0)
         assistant_content = _build_content(response)
         messages.append({"role": "assistant", "content": assistant_content})
 
         if response.stop_reason == "end_turn":
             text_parts = [b["text"] for b in assistant_content if b["type"] == "text"]
-            total_tokens = total_input_tokens + total_output_tokens
+            total_tokens = total_input_tokens + total_output_tokens + total_cache_creation_tokens + total_cache_read_tokens
             queries_consumed = max(1, math.ceil(total_tokens / QUERY_TOKEN_THRESHOLD))
             extra = queries_consumed - 1
             if extra > 0:
                 _charge_extra_queries(instance_id, extra)
             execute_query(
-                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?)",
-                [instance_id, total_input_tokens, total_output_tokens, api_calls, queries_consumed],
+                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, cache_creation_tokens, cache_read_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [instance_id, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens, api_calls, queries_consumed],
                 instance_id=None,
             )
             return {
@@ -1172,4 +1240,5 @@ def chat(
 
         if response.stop_reason == "tool_use":
             tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id, current_user=current_user)
+            _truncate_tool_results(tool_results, MAX_TOOL_RESULT_CHARS)
             messages.append({"role": "user", "content": tool_results})

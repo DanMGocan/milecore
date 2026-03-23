@@ -98,7 +98,8 @@ export function AdminPage() {
         );
     }
 
-    const totalTokens = (stats?.total_input_tokens || 0) + (stats?.total_output_tokens || 0);
+    const totalTokens = (stats?.total_input_tokens || 0) + (stats?.total_output_tokens || 0) + (stats?.total_cache_creation_tokens || 0) + (stats?.total_cache_read_tokens || 0);
+    const totalCachedTokens = (stats?.total_cache_creation_tokens || 0) + (stats?.total_cache_read_tokens || 0);
 
     return (
         <div className="dashboard-container">
@@ -111,6 +112,7 @@ export function AdminPage() {
                 <StatCard label="Active Instances" value={stats?.active_instances} accent="#4ade80" />
                 <StatCard label="Total Queries" value={formatNum(stats?.total_queries)} accent="#fbbf24" />
                 <StatCard label="Total Tokens" value={formatNum(totalTokens)} accent="#a78bfa" />
+                <StatCard label="Cached Tokens" value={formatNum(totalCachedTokens)} accent="#38bdf8" />
                 <StatCard label="Query Packs Sold" value={stats?.total_purchases} accent="#f87171" />
             </div>
 
@@ -126,6 +128,8 @@ export function AdminPage() {
                                 <Tooltip {...tooltipStyle} />
                                 <Line type="monotone" dataKey="input_tokens" stroke="#6c8cff" name="Input Tokens" dot={false} />
                                 <Line type="monotone" dataKey="output_tokens" stroke="#a78bfa" name="Output Tokens" dot={false} />
+                                <Line type="monotone" dataKey="cache_creation_tokens" stroke="#38bdf8" name="Cache Creation" dot={false} />
+                                <Line type="monotone" dataKey="cache_read_tokens" stroke="#2dd4bf" name="Cache Read" dot={false} />
                             </LineChart>
                         </ResponsiveContainer>
                     ) : <div className="empty-chart"><span>No token data yet</span></div>}

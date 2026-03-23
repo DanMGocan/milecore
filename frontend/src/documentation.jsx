@@ -1995,11 +1995,11 @@ function CostEstimateSection() {
                     <tr><th>Component</th><th>Tokens</th><th>Notes</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td>System prompt</td><td>~5,400</td><td>Full prompt + schema DDL. Cached with 5-min TTL.</td></tr>
-                    <tr><td>Tool definitions</td><td>~250</td><td>7 tool schemas</td></tr>
-                    <tr><td>Non-cached input</td><td>~4,000</td><td>User message + conversation history + tool results</td></tr>
-                    <tr><td>Cached reads</td><td>~10,800</td><td>System prompt from cache on both calls (~5,400 × 2). 90% hit rate.</td></tr>
-                    <tr><td>Cache writes</td><td>~540</td><td>System prompt written to cache on ~10% of requests</td></tr>
+                    <tr><td>System prompt</td><td>~3,500</td><td>Compact prompt + schema DDL. Cached with 5-min TTL.</td></tr>
+                    <tr><td>Tool definitions</td><td>~3,000</td><td>8–11 tool schemas (filtered by user role)</td></tr>
+                    <tr><td>Non-cached input</td><td>~4,000</td><td>User message + conversation history (capped at 20 messages) + tool results (LIMIT 50 by default, user can request more)</td></tr>
+                    <tr><td>Cached reads</td><td>~7,000</td><td>System prompt from cache on both calls (~3,500 &times; 2). 90% hit rate.</td></tr>
+                    <tr><td>Cache writes</td><td>~350</td><td>System prompt written to cache on ~10% of requests</td></tr>
                     <tr><td>Output tokens</td><td>~2,300</td><td>Tool-use call (~300) + final response (~2,000)</td></tr>
                 </tbody>
             </table>
@@ -2185,8 +2185,8 @@ function CostEstimateSection() {
                 <ul>
                     <li><strong>API costs dominate everything.</strong> Claude API accounts for 85–99% of total spend. Infrastructure optimization has minimal impact on the overall bill.</li>
                     <li><strong>Opus is ~5x more expensive than Sonnet.</strong> The default model is Sonnet. Switching to Opus should only be done if the quality improvement justifies a 5x cost increase.</li>
-                    <li><strong>Prompt caching saves ~90% on system prompt reads.</strong> The system prompt is cached with a 5-minute TTL. At Sonnet rates, this saves ~$0.014 per message vs. uncached reads (~$139/month saved at medium tier).</li>
-                    <li><strong>The agentic loop amplifies costs.</strong> Each tool call triggers another full API round-trip. A simple query costs ~$0.052, but a complex multi-step operation (3–4 tool calls) could cost $0.10–$0.15.</li>
+                    <li><strong>Prompt caching saves ~90% on system prompt reads.</strong> The static instructions are sent as a separate cached block, shared across ALL users and instances. Only the small per-request context (user identity, schema, today's date) is uncached. This maximizes cache hit rate even when different users make requests.</li>
+                    <li><strong>The agentic loop amplifies costs.</strong> Each tool call triggers another full API round-trip. Conversation history is capped at 20 messages. SQL results default to LIMIT 50 but users can request more (consuming additional queries from their plan).</li>
                     <li><strong>No scheduled API costs.</strong> Daily reports use direct SQL + Brevo SMTP — they do not call the Claude API.</li>
                     <li><strong>PostgreSQL runs locally on the same instance.</strong> No RDS or managed database service needed.</li>
                     <li><strong>Email is effectively free.</strong> Brevo's free tier (300 emails/day) covers daily reports and ad-hoc sends with significant headroom.</li>
@@ -2197,10 +2197,10 @@ function CostEstimateSection() {
             <ul>
                 <li>22 business days per month for message volume calculations</li>
                 <li>us-east-1 region for all AWS pricing</li>
-                <li>90% prompt cache hit rate — realistic for active users within the 5-minute ephemeral window</li>
+                <li>High prompt cache hit rate — static instructions are shared across all users and instances; only the small context block is uncached</li>
                 <li>Average 2 API calls per user message (1 initial + 1 tool-use follow-up)</li>
                 <li><span className="doc-code">max_tokens=4096</span> per API call — actual output is typically much shorter (~300–2,000 tokens)</li>
-                <li>Conversation history grows over a session — the 4,000 non-cached input token estimate accounts for average conversation context</li>
+                <li>Conversation history is capped at 20 messages (configurable via MAX_HISTORY_MESSAGES). SQL queries default to LIMIT 50 — users can request more, which consumes additional queries from their plan.</li>
                 <li>AWS and Claude API pricing as of early 2025</li>
                 <li>Single-instance deployment — no load balancing, auto-scaling, or multi-AZ redundancy</li>
                 <li>Brevo free tier — 300 emails/day limit; upgrade to paid plan ($9/mo) only if needed</li>

@@ -377,12 +377,85 @@ def validate_query(
 # Schema introspection
 # ---------------------------------------------------------------------------
 
-def get_schema_ddl(instance_id: int | None = None) -> str:
-    """Reconstruct CREATE TABLE statements from ``information_schema``.
+# Columns present on every table — omitted from DDL to save tokens.
+_SKIP_COLUMNS = {"instance_id", "id", "created_at", "updated_at"}
 
-    Global tables (auth_users, instances, …) and the ``instance_id`` column
-    are excluded — the AI does not need to see them because the application
-    injects ``instance_id`` automatically.
+# One-line annotations with purpose + key enum values for each table.
+_TABLE_ANNOTATIONS: dict[str, str] = {
+    "sites": "-- Client sites/buildings. status: active|inactive",
+    "floors": "-- Physical floors in a site. status: active|inactive",
+    "zones": "-- Named areas within a floor. zone_type: general|office|common_area|restricted|storage|technical|reception|outdoor. status: active|inactive",
+    "rooms": "-- Rooms/spaces in a site (linked via site_id, floor_id, zone_id). has_av (bool), capacity (int). status: active|inactive",
+    "desks": "-- Hot desks. has_monitor, has_docking_station (bool). status: active|inactive",
+    "parking_spaces": "-- Parking spots. space_type: standard|accessible|ev_charging|motorcycle. status: active|inactive",
+    "lockers": "-- Storage lockers. locker_size: small|standard|large. status: active|inactive",
+    "bookings": "-- Reservations for rooms/desks/parking/lockers/assets. resource_type: room|desk|parking_space|locker|asset. status: confirmed|cancelled|completed|no_show. source: chat|email",
+    "companies": "-- Organisations. type: employer|client|vendor. category: hardware|software|services|telecom|av|facilities. status: active|inactive",
+    "people": "-- All people. Link via employer_id (employee), client_id (client contact), vendor_id (vendor rep). is_user=1 → app user. team_role: lead|member|backup. user_role: user|admin|owner. status: active|inactive",
+    "teams": "-- Named groups. team_type: support|av|operations|management",
+    "pto": "-- PTO/leave records. leave_type: pto|sick|personal|bereavement|other",
+    "assets": "-- Equipment. asset_type: laptop|desktop|monitor|printer|docking_station|av_equipment|network_device|phone|peripheral|other. lifecycle_status: active|deployed|spare|in_repair|pending_disposal|decommissioned|disposed|lost. ownership_type: company|leased|byod. criticality: low|medium|high|critical",
+    "asset_relationships": "-- Parent/child links. relationship_type: connected_to|part_of|bundled_with|replaced_by",
+    "asset_status_history": "-- Auto-logged lifecycle changes. Include changed_by_person_id and reason on manual changes",
+    "asset_assignments": "-- Assignment history. Close old (end_date) before inserting new",
+    "licenses": "-- Software licenses. license_type: perpetual|subscription|oem|volume|site|open_source. status: active|expired|cancelled",
+    "software_installations": "-- Software on assets. Update licenses.seats_used on install/remove",
+    "asset_documents": "-- Files attached to assets. document_type: warranty|invoice|manual|certificate|photo|general",
+    "disposal_records": "-- Asset disposal. disposal_method: recycled|donated|sold|destroyed|returned_to_vendor|other",
+    "tickets": "-- Support tickets. ticket_type: incident|service_request|question|access_request. priority: low|medium|high|critical. status: open|in_progress|pending|resolved|closed. source: walk_in|email|chat|phone|self_service",
+    "ticket_replies": "-- Ticket email replies. direction: outbound|inbound",
+    "ticket_watchers": "-- CC/watchers on tickets",
+    "ticket_attachments": "-- Files attached to tickets",
+    "ticket_timeline": "-- Ticket event audit trail. event_type: status_changed|priority_changed|assigned|replied|watcher_added|watcher_removed|attachment_added",
+    "technical_issues": "-- Diagnosed technical problems. issue_type: hardware|software|network|av|printing|access|other. severity: low|medium|high|critical. recurrence_status: one_off|intermittent|recurring|resolved",
+    "issue_occurrences": "-- Individual sightings of a technical issue. outcome: resolved|workaround_applied|escalated|unresolved",
+    "events": "-- Scheduled events. event_type: meeting|outage|maintenance|audit|vendor_visit|training|deployment|other. status: planned|in_progress|completed|cancelled. impact_level: none|low|medium|high",
+    "event_participants": "-- People in events. participant_role: organizer|attendee|presenter|observer. attendance_status: confirmed|tentative|declined|attended|no_show",
+    "event_assets": "-- Assets for events. usage_role: primary|backup|demo|deployment",
+    "notes": "-- Freeform notes. note_type: general|handover|follow_up|observation|escalation. visibility: internal|client_visible",
+    "work_logs": "-- Technician work records. action_type: troubleshooting|repair|installation|configuration|inspection|consultation|escalation|other",
+    "inventory_items": "-- Spare parts catalog. item_type: spare_part|consumable|cable|adapter|peripheral|component. unit_of_measure: each|box|pack|roll",
+    "inventory_stock": "-- Stock levels per item per site/room. Always insert inventory_transaction when changing",
+    "inventory_transactions": "-- Stock movement log. transaction_type: check_in|check_out|restock|transfer|write_off|adjustment",
+    "changes": "-- Change management. change_type: standard|emergency|normal. risk_level: low|medium|high. status: planned|approved|in_progress|completed|rolled_back|cancelled",
+    "vendor_contracts": "-- Contracts/SLAs. contract_type: support|lease|maintenance|subscription|project. status: active|expired|pending_renewal|terminated",
+    "projects": "-- Project tracking. status: planned|active|on_hold|completed|cancelled. priority: low|medium|high|critical. category: infrastructure|operations|maintenance|deployment|migration|other",
+    "project_members": "-- People in projects. role: manager|contributor|stakeholder|observer",
+    "project_tasks": "-- Work items in a project. Nestable via parent_task_id. status: todo|in_progress|done|blocked|cancelled. priority: low|medium|high|critical",
+    "project_updates": "-- Progress log entries. update_type: progress|blocker|decision|milestone|general",
+    "project_expenses": "-- Budget line items. category: hardware|software|services|labor|travel|other",
+    "project_links": "-- Links project to other entities. entity_type = table name, entity_id = record id",
+    "knowledge_articles": "-- Troubleshooting guides/SOPs. article_type: troubleshooting|how_to|sop|reference|faq. status: draft|published|archived",
+    "misc_knowledge": "-- Operational knowledge. AI generates keywords from content",
+    "workflows": "-- Step-by-step procedures. status: draft|published|archived",
+    "tags": "-- Tag definitions",
+    "entity_tags": "-- Tag assignments. entity_type = table name, entity_id = record id",
+    "audit_log": "-- Auto-logged data changes (read-only). action: INSERT|UPDATE|DELETE",
+    "reminders": "-- Email reminders. recurrence: one_time|daily|weekly|monthly. status: active|paused|cancelled|completed",
+    "maintenance_tasks": "-- Reusable maintenance templates. category: hvac|electrical|plumbing|fire_safety|elevator|cleaning|it_infrastructure|av_equipment|security|structural|landscaping|general",
+    "checklist_templates": "-- Reusable checklist definitions. checklist_type: maintenance|inspection|safety|audit|commissioning|decommission",
+    "checklist_template_items": "-- Items in a checklist. item_type: pass_fail|yes_no|numeric|text|photo|rating",
+    "maintenance_plans": "-- Recurring maintenance schedules. plan_type: preventive|predictive|corrective|condition_based. recurrence: daily|weekly|biweekly|monthly|quarterly|semi_annual|annual|custom",
+    "maintenance_plan_tasks": "-- Junction: tasks in plans",
+    "inspections": "-- Recurring inspection schedules. inspection_type: safety|compliance|routine|condition|regulatory|quality",
+    "work_orders": "-- Maintenance work instances. wo_type: preventive|corrective|emergency|inspection|condition_based. status: open|scheduled|in_progress|on_hold|completed|cancelled|overdue. source: manual|scheduled|ticket|inspection_failure",
+    "inspection_records": "-- Performed inspections. overall_result: pass|fail|partial|na",
+    "checklist_responses": "-- Checklist answers for work orders or inspections",
+    "work_order_parts": "-- Inventory consumed during maintenance",
+    "service_catalog": "-- Available services. category: onboarding|offboarding|workplace|it_access|equipment|facilities|av_support|security|moves|general. status: active|inactive|archived",
+    "service_request_templates": "-- Form fields for service requests. field_type: text|textarea|date|datetime|number|select|person|site|room|desk|asset|boolean",
+    "request_fulfillment_tasks": "-- Template fulfillment steps for a service",
+    "service_requests": "-- Submitted service requests. status: submitted|pending_approval|approved|in_progress|on_hold|completed|cancelled|rejected",
+    "service_request_task_progress": "-- Fulfillment task completion tracking. status: pending|in_progress|completed|skipped|blocked",
+}
+
+
+def get_schema_ddl(instance_id: int | None = None) -> str:
+    """Build a compact schema reference for the AI.
+
+    Uses a one-line-per-table format with boilerplate columns (id,
+    instance_id, created_at, updated_at) and DEFAULT clauses omitted
+    to minimise token count.
     """
     pool = _get_pool()
 
@@ -405,24 +478,26 @@ def get_schema_ddl(instance_id: int | None = None) -> str:
         tname = row["table_name"]
         if tname in _GLOBAL_TABLES:
             continue
-        if row["column_name"] == "instance_id":
+        if row["column_name"] in _SKIP_COLUMNS:
             continue
         tables.setdefault(tname, []).append(row)
 
-    statements: list[str] = []
+    header = "-- All tables include: id (PK), instance_id, created_at, updated_at (omitted below)\n"
+    lines: list[str] = [header]
     for tname in sorted(tables):
-        col_defs: list[str] = []
+        annotation = _TABLE_ANNOTATIONS.get(tname, "")
+        cols = []
         for col in tables[tname]:
             parts = [col["column_name"], col["data_type"].upper()]
             if col["is_nullable"] == "NO":
                 parts.append("NOT NULL")
-            if col["column_default"] is not None:
-                parts.append(f"DEFAULT {col['column_default']}")
-            col_defs.append("  " + " ".join(parts))
-        stmt = f"CREATE TABLE {tname} (\n" + ",\n".join(col_defs) + "\n)"
-        statements.append(stmt)
+            cols.append(" ".join(parts))
+        line = f"{tname}: {', '.join(cols)}" if cols else tname
+        if annotation:
+            line = f"{annotation}\n{line}"
+        lines.append(line)
 
-    return ";\n\n".join(statements) + ";" if statements else ""
+    return "\n\n".join(lines)
 
 
 def get_tables(instance_id: int | None = None) -> list[str]:

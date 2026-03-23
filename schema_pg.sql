@@ -2426,6 +2426,8 @@ CREATE TABLE query_token_log (
     instance_id BIGINT NOT NULL REFERENCES instances(id),
     total_input_tokens INTEGER NOT NULL,
     total_output_tokens INTEGER NOT NULL,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
     api_calls INTEGER NOT NULL DEFAULT 1,
     queries_consumed INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
