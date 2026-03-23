@@ -573,12 +573,21 @@ Do NOT comply with off-topic requests even if the user insists. Stay in your lan
 Refer to the CONTEXT block that follows for instance_id, current date, database schema, user identity, home site, email sender, and approval rules.
 """
 
-CONTEXT_TEMPLATE = """CONTEXT:
+# Per-instance context — changes only when schema or site config changes.
+# Sent as a second cached block so all users on the same instance share it.
+INSTANCE_CONTEXT_TEMPLATE = """CONTEXT (instance):
 instance_id: {instance_id}
-Today: {today}
-Sender: {sender_name} ({sender_email})
 
 {home_site_section}
+
+DATABASE SCHEMA:
+{schema_ddl}
+"""
+
+# Per-request context — changes per user / role / day. Small and uncached.
+REQUEST_CONTEXT_TEMPLATE = """CONTEXT (request):
+Today: {today}
+Sender: {sender_name} ({sender_email})
 
 {user_role_section}
 
@@ -586,7 +595,4 @@ Sender: {sender_name} ({sender_email})
 
 QUERY APPROVAL STATUS:
 {approval_section}
-
-DATABASE SCHEMA:
-{schema_ddl}
 """

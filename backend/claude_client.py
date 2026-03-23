@@ -28,7 +28,7 @@ from backend.config import (
 from backend.database import execute_query, get_home_site, get_schema_ddl, validate_query
 from backend.email_sender import send_email as smtp_send_email
 from backend.routes.upload import get_chat_attachment_path, resolve_s3_attachment_for_email
-from backend.prompts import SYSTEM_STATIC, CONTEXT_TEMPLATE, TOOLS
+from backend.prompts import SYSTEM_STATIC, INSTANCE_CONTEXT_TEMPLATE, REQUEST_CONTEXT_TEMPLATE, TOOLS
 
 _TABLE_RE = re.compile(
     r"(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|INTO)\s+(\w+)",
@@ -69,10 +69,30 @@ def _filter_tools(user_role: str) -> list[dict]:
 
 
 def _trim_history(history: list[dict], max_messages: int) -> list[dict]:
-    """Keep only the last *max_messages* entries from conversation history."""
+    """Keep only the last *max_messages* entries, respecting tool_use/tool_result pairs.
+
+    After slicing, skips forward past any orphaned tool_result or tool_use
+    blocks so the history starts on a clean user text message.
+    """
     if len(history) <= max_messages:
         return history
-    return history[-max_messages:]
+    trimmed = history[-max_messages:]
+    while trimmed:
+        msg = trimmed[0]
+        content = msg.get("content")
+        # Skip tool_result / tool_use messages (content is a list of block dicts)
+        if isinstance(content, list) and any(
+            isinstance(b, dict) and b.get("type") in ("tool_result", "tool_use")
+            for b in content
+        ):
+            trimmed = trimmed[1:]
+            continue
+        # Skip assistant messages that precede a user message
+        if msg.get("role") == "assistant":
+            trimmed = trimmed[1:]
+            continue
+        break
+    return trimmed
 
 
 def _truncate_tool_results(tool_results: list[dict], max_chars: int) -> None:
@@ -268,10 +288,11 @@ _prompt_cache: dict[int, dict] = {}
 
 
 def _build_system_blocks(user_role: str = "admin", current_user: dict[str, Any] | None = None, instance_id: int = 1) -> list[dict]:
-    """Return two system content blocks: static (cached) + dynamic context (uncached).
+    """Return three system content blocks for optimal prompt caching.
 
-    The static block is byte-for-byte identical across all users, roles, and
-    instances, maximising Anthropic prompt cache reuse.
+    Block 1 — Static instructions (cached, universal across all users/instances)
+    Block 2 — Instance context + schema (cached, shared by all users on same instance)
+    Block 3 — Per-request context: user, role, today, approvals (uncached, small)
     """
     now = time.time()
     cache = _prompt_cache.get(instance_id, {})
@@ -280,20 +301,24 @@ def _build_system_blocks(user_role: str = "admin", current_user: dict[str, Any] 
         cache["home_site"] = _build_home_site_section(instance_id)
         cache["ts"] = now
         _prompt_cache[instance_id] = cache
-    context = CONTEXT_TEMPLATE.format(
+
+    instance_context = INSTANCE_CONTEXT_TEMPLATE.format(
         instance_id=instance_id,
+        home_site_section=cache["home_site"],
+        schema_ddl=_get_cached_schema(instance_id),
+    )
+    request_context = REQUEST_CONTEXT_TEMPLATE.format(
         today=date.today().isoformat(),
         sender_name=BREVO_SENDER_NAME,
         sender_email=BREVO_SENDER_EMAIL,
-        home_site_section=cache["home_site"],
         user_role_section=_build_user_role_section(user_role),
         current_user_section=_build_current_user_section(current_user),
         approval_section=cache["approval"],
-        schema_ddl=_get_cached_schema(instance_id),
     )
     return [
         {"type": "text", "text": SYSTEM_STATIC, "cache_control": {"type": "ephemeral"}},
-        {"type": "text", "text": context},
+        {"type": "text", "text": instance_context, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": request_context},
     ]
 
 
