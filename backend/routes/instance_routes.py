@@ -58,8 +58,8 @@ async def create_instance(body: CreateInstanceBody, user: AuthUser = Depends(get
 
     # Create instance
     result = execute_query(
-        "INSERT INTO instances (name, slug, tier, query_limit) VALUES (?, ?, 'free', 60)",
-        [body.name.strip(), slug],
+        "INSERT INTO instances (name, slug, tier, query_limit, billing_owner_id) VALUES (?, ?, 'free', 60, ?)",
+        [body.name.strip(), slug, user.id],
         instance_id=None,
     )
     if "error" in result:

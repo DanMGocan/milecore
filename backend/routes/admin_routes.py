@@ -80,11 +80,13 @@ async def admin_instances(_user: AuthUser = Depends(require_platform_admin)):
         "SELECT i.id, i.name, i.tier, i.status, i.query_count, i.query_limit, "
         "i.email_addon, i.inbound_email_addon, i.daily_reports_addon, i.created_at, "
         "COUNT(m.id) AS member_count, "
-        "bo.email AS owner_email "
+        "COALESCE(owner_user.email, bo.email) AS owner_email "
         "FROM instances i "
         "LEFT JOIN instance_memberships m ON m.instance_id = i.id "
+        "LEFT JOIN instance_memberships om ON om.instance_id = i.id AND om.role = 'owner' "
+        "LEFT JOIN auth_users owner_user ON owner_user.id = om.auth_user_id "
         "LEFT JOIN auth_users bo ON bo.id = i.billing_owner_id "
-        "GROUP BY i.id, bo.email ORDER BY i.created_at DESC",
+        "GROUP BY i.id, owner_user.email, bo.email ORDER BY i.created_at DESC",
         instance_id=None,
     )
     rows = result.get("rows", [])

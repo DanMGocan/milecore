@@ -4,7 +4,7 @@ Edit SYSTEM_STATIC, CONTEXT_TEMPLATE, and TOOLS here to change how the AI behave
 """
 
 TOOLS = [
-    {
+    {"type": "function", "function": {
         "name": "execute_sql",
         "description": (
             "Execute a SQL query against the PostgreSQL database. "
@@ -14,22 +14,16 @@ TOOLS = [
             "For dates, use ISO 8601 format (YYYY-MM-DD). "
             "You can call this tool multiple times to perform multi-step operations."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "sql": {
-                    "type": "string",
-                    "description": "The SQL query to execute",
-                },
-                "explanation": {
-                    "type": "string",
-                    "description": "Brief explanation of what this query does",
-                },
+                "sql": {"type": "string", "description": "The SQL query to execute"},
+                "explanation": {"type": "string", "description": "Brief explanation of what this query does"},
             },
             "required": ["sql", "explanation"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "create_table",
         "description": (
             "Create a new table in the database when the user wants to store data "
@@ -37,22 +31,16 @@ TOOLS = [
             "already has 25+ tables covering most site operations scenarios. "
             "Only use this if the data truly doesn't fit anywhere."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "sql": {
-                    "type": "string",
-                    "description": "The CREATE TABLE SQL statement",
-                },
-                "explanation": {
-                    "type": "string",
-                    "description": "Why this new table is needed",
-                },
+                "sql": {"type": "string", "description": "The CREATE TABLE SQL statement"},
+                "explanation": {"type": "string", "description": "Why this new table is needed"},
             },
             "required": ["sql", "explanation"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "send_email",
         "description": (
             "Send an email to a recipient via SMTP. "
@@ -60,25 +48,13 @@ TOOLS = [
             "from the people table using execute_sql first. "
             "Only call this tool when you have a confirmed email address."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "to_email": {
-                    "type": "string",
-                    "description": "The recipient's email address",
-                },
-                "to_name": {
-                    "type": "string",
-                    "description": "The recipient's display name (optional)",
-                },
-                "subject": {
-                    "type": "string",
-                    "description": "The email subject line",
-                },
-                "body": {
-                    "type": "string",
-                    "description": "The plain text email body",
-                },
+                "to_email": {"type": "string", "description": "The recipient's email address"},
+                "to_name": {"type": "string", "description": "The recipient's display name (optional)"},
+                "subject": {"type": "string", "description": "The email subject line"},
+                "body": {"type": "string", "description": "The plain text email body"},
                 "attachment_file_ids": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -87,35 +63,26 @@ TOOLS = [
             },
             "required": ["to_email", "subject", "body"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "generate_excel",
         "description": (
             "Generate an Excel (.xlsx) file from SQL query results for the user to download. "
             "Use this when the user asks for a spreadsheet, export, Excel file, or downloadable report. "
             "Each sheet is populated by a SELECT query. Only SELECT queries are allowed."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "filename": {
-                    "type": "string",
-                    "description": "The filename for the Excel file (without .xlsx extension)",
-                },
+                "filename": {"type": "string", "description": "The filename for the Excel file (without .xlsx extension)"},
                 "sheets": {
                     "type": "array",
                     "description": "One or more sheets to include in the workbook",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "Sheet name (max 31 chars)",
-                            },
-                            "sql": {
-                                "type": "string",
-                                "description": "SELECT query to populate this sheet",
-                            },
+                            "name": {"type": "string", "description": "Sheet name (max 31 chars)"},
+                            "sql": {"type": "string", "description": "SELECT query to populate this sheet"},
                         },
                         "required": ["name", "sql"],
                     },
@@ -123,8 +90,8 @@ TOOLS = [
             },
             "required": ["filename", "sheets"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "import_csv",
         "description": (
             "Import a staged CSV file into a database table with column mapping. "
@@ -132,17 +99,11 @@ TOOLS = [
             "and bulk-insert the data. Always skip the 'id' column (auto-generated). "
             "Only map columns that have a clear match."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "The staged file ID from the upload",
-                },
-                "table": {
-                    "type": "string",
-                    "description": "Target table name",
-                },
+                "file_id": {"type": "string", "description": "The staged file ID from the upload"},
+                "table": {"type": "string", "description": "Target table name"},
                 "column_mapping": {
                     "type": "object",
                     "description": (
@@ -151,15 +112,12 @@ TOOLS = [
                         "Only include columns that have a match. Omit id, created_at, updated_at."
                     ),
                 },
-                "explanation": {
-                    "type": "string",
-                    "description": "Brief explanation of the mapping decisions",
-                },
+                "explanation": {"type": "string", "description": "Brief explanation of the mapping decisions"},
             },
             "required": ["file_id", "table", "column_mapping", "explanation"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "manage_approval_rules",
         "description": (
             "Manage query approval rules. Approval rules define which write operations "
@@ -167,84 +125,51 @@ TOOLS = [
             "Use action='add' to create a new rule, action='list' to see all rules, "
             "or action='remove' to deactivate a rule."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["add", "list", "remove"],
-                    "description": "The action to perform",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Natural language description of the rule (required for 'add')",
-                },
-                "rule_id": {
-                    "type": "integer",
-                    "description": "The rule ID to remove (required for 'remove')",
-                },
+                "action": {"type": "string", "enum": ["add", "list", "remove"], "description": "The action to perform"},
+                "description": {"type": "string", "description": "Natural language description of the rule (required for 'add')"},
+                "rule_id": {"type": "integer", "description": "The rule ID to remove (required for 'remove')"},
             },
             "required": ["action"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "submit_for_approval",
         "description": (
             "Submit a write query for admin approval instead of executing it directly. "
             "Use this INSTEAD of execute_sql when the query matches an active approval rule."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "sql": {
-                    "type": "string",
-                    "description": "The SQL statement that needs approval",
-                },
-                "explanation": {
-                    "type": "string",
-                    "description": "Brief explanation of what this query does",
-                },
-                "matched_rule_id": {
-                    "type": "integer",
-                    "description": "The ID of the approval rule that matched",
-                },
-                "matched_rule_description": {
-                    "type": "string",
-                    "description": "The description of the matched rule",
-                },
+                "sql": {"type": "string", "description": "The SQL statement that needs approval"},
+                "explanation": {"type": "string", "description": "Brief explanation of what this query does"},
+                "matched_rule_id": {"type": "integer", "description": "The ID of the approval rule that matched"},
+                "matched_rule_description": {"type": "string", "description": "The description of the matched rule"},
             },
             "required": ["sql", "explanation", "matched_rule_id", "matched_rule_description"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "review_approvals",
         "description": (
             "Review, approve, or reject pending query approvals. "
             "Use action='list' to see pending approvals, action='approve' to approve and execute, "
             "or action='reject' to reject a pending approval."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["list", "approve", "reject"],
-                    "description": "The action to perform",
-                },
-                "approval_id": {
-                    "type": "integer",
-                    "description": "The approval ID to approve or reject (required for 'approve'/'reject')",
-                },
-                "note": {
-                    "type": "string",
-                    "description": "Optional note for the approval/rejection",
-                },
+                "action": {"type": "string", "enum": ["list", "approve", "reject"], "description": "The action to perform"},
+                "approval_id": {"type": "integer", "description": "The approval ID to approve or reject (required for 'approve'/'reject')"},
+                "note": {"type": "string", "description": "Optional note for the approval/rejection"},
             },
             "required": ["action"],
         },
-        "cache_control": {"type": "ephemeral"},
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "manage_reminders",
         "description": (
             "Manage email reminders. Use action='create' to set a new reminder, "
@@ -252,44 +177,21 @@ TOOLS = [
             "Reminders send an email notification at the specified time. "
             "Supports one-time, daily, weekly, and monthly recurrence."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["create", "list", "cancel"],
-                    "description": "The action to perform",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Short title for the reminder (required for 'create')",
-                },
-                "message": {
-                    "type": "string",
-                    "description": "Optional longer message body for the reminder email",
-                },
-                "remind_at": {
-                    "type": "string",
-                    "description": "ISO 8601 datetime for when to send the reminder (required for 'create'), e.g. '2026-03-23T09:00:00'",
-                },
-                "recurrence": {
-                    "type": "string",
-                    "enum": ["one_time", "daily", "weekly", "monthly"],
-                    "description": "How often to repeat (default: one_time)",
-                },
-                "target_person_id": {
-                    "type": "integer",
-                    "description": "Person ID to notify. If omitted, notifies the current user.",
-                },
-                "reminder_id": {
-                    "type": "integer",
-                    "description": "The reminder ID to cancel (required for 'cancel')",
-                },
+                "action": {"type": "string", "enum": ["create", "list", "cancel"], "description": "The action to perform"},
+                "title": {"type": "string", "description": "Short title for the reminder (required for 'create')"},
+                "message": {"type": "string", "description": "Optional longer message body for the reminder email"},
+                "remind_at": {"type": "string", "description": "ISO 8601 datetime for when to send the reminder (required for 'create'), e.g. '2026-03-23T09:00:00'"},
+                "recurrence": {"type": "string", "enum": ["one_time", "daily", "weekly", "monthly"], "description": "How often to repeat (default: one_time)"},
+                "target_person_id": {"type": "integer", "description": "Person ID to notify. If omitted, notifies the current user."},
+                "reminder_id": {"type": "integer", "description": "The reminder ID to cancel (required for 'cancel')"},
             },
             "required": ["action"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "invite_user",
         "description": (
             "Invite someone to join this TrueCore.cloud instance. "
@@ -297,27 +199,17 @@ TOOLS = [
             "Only the instance owner can invite users. "
             "Use this when the owner says 'invite [name] with email [email]' or similar."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "email": {
-                    "type": "string",
-                    "description": "The email address to send the invitation to",
-                },
-                "name": {
-                    "type": "string",
-                    "description": "The display name of the person being invited",
-                },
-                "role": {
-                    "type": "string",
-                    "enum": ["user", "admin"],
-                    "description": "The role to assign when they join (default: user)",
-                },
+                "email": {"type": "string", "description": "The email address to send the invitation to"},
+                "name": {"type": "string", "description": "The display name of the person being invited"},
+                "role": {"type": "string", "enum": ["user", "admin"], "description": "The role to assign when they join (default: user)"},
             },
             "required": ["email", "name"],
         },
-    },
-    {
+    }},
+    {"type": "function", "function": {
         "name": "reply_to_ticket",
         "description": (
             "Send a reply to an existing support ticket. This sends an email to the ticket "
@@ -326,22 +218,12 @@ TOOLS = [
             "update the requester, or send a message about a ticket to the client. "
             "Look up the ticket first to confirm it exists."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "ticket_id": {
-                    "type": "integer",
-                    "description": "The ticket ID to reply to",
-                },
-                "body": {
-                    "type": "string",
-                    "description": "The reply message body (plain text)",
-                },
-                "update_status": {
-                    "type": "string",
-                    "enum": ["open", "in_progress", "pending", "resolved", "closed"],
-                    "description": "Optionally update the ticket status with this reply",
-                },
+                "ticket_id": {"type": "integer", "description": "The ticket ID to reply to"},
+                "body": {"type": "string", "description": "The reply message body (plain text)"},
+                "update_status": {"type": "string", "enum": ["open", "in_progress", "pending", "resolved", "closed"], "description": "Optionally update the ticket status with this reply"},
                 "attachment_file_ids": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -350,7 +232,7 @@ TOOLS = [
             },
             "required": ["ticket_id", "body"],
         },
-    },
+    }},
 ]
 
 SYSTEM_STATIC = """You are TrueCore.cloud, an intelligent AI database assistant for technical site operations. You help IT support teams, tech bar technicians, AV support teams, and workplace technology teams store and retrieve operational information.

@@ -29,12 +29,12 @@ def _count(sql: str, instance_id: int = 1) -> int:
 
 @router.get("/overview")
 async def overview(ctx: InstanceContext = Depends(get_current_instance)):
-    row = _query(
+    rows = _query(
         "SELECT "
         "(SELECT COUNT(*) FROM assets WHERE lifecycle_status = 'active' AND instance_id = ?) AS active_assets, "
         "(SELECT COUNT(*) FROM tickets WHERE status IN ('open', 'in_progress') AND instance_id = ?) AS open_tickets, "
         "(SELECT COUNT(*) FROM technical_issues WHERE resolution IS NULL AND instance_id = ?) AS open_issues, "
-        "(SELECT COUNT(*) FROM events WHERE DATE(start_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', '+7 days') AND instance_id = ?) AS events_this_week, "
+        "(SELECT COUNT(*) FROM events WHERE start_time::date BETWEEN (CURRENT_DATE - INTERVAL '7 days')::date AND (CURRENT_DATE + INTERVAL '7 days')::date AND instance_id = ?) AS events_this_week, "
         "(SELECT COUNT(*) FROM technical_issues WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM tickets WHERE important=1 AND instance_id = ?) + "
         "(SELECT COUNT(*) FROM events WHERE important=1 AND instance_id = ?) + "
@@ -62,7 +62,18 @@ async def overview(ctx: InstanceContext = Depends(get_current_instance)):
          ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id,
          ctx.instance_id, ctx.instance_id, ctx.instance_id, ctx.instance_id],
         instance_id=ctx.instance_id,
-    )[0]
+    )
+    if not rows:
+        row = {
+            "active_assets": 0, "open_tickets": 0, "open_issues": 0,
+            "events_this_week": 0, "important_items": 0, "active_work_orders": 0,
+            "overdue_work_orders": 0, "active_maintenance_plans": 0,
+            "active_inspections": 0, "deployed_assets": 0, "spare_assets": 0,
+            "in_repair_assets": 0, "critical_assets": 0, "warranty_expiring_30d": 0,
+            "licenses_expiring_30d": 0, "active_service_requests": 0,
+        }
+    else:
+        row = rows[0]
     push = _query(
         "SELECT value FROM app_settings WHERE key = 'last_push_at' AND instance_id = ?",
         [ctx.instance_id],

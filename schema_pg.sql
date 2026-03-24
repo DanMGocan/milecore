@@ -36,6 +36,15 @@ CREATE TABLE instances (
     bookings_addon BOOLEAN NOT NULL DEFAULT FALSE,
     query_pool_reset_at TIMESTAMPTZ,
     email_signature TEXT,
+    deployment_mode TEXT NOT NULL DEFAULT 'saas'
+        CHECK (deployment_mode IN ('saas', 'byok')),
+    llm_provider TEXT DEFAULT 'anthropic'
+        CHECK (llm_provider IN ('anthropic', 'openai', 'google', 'deepseek')),
+    llm_model TEXT,
+    llm_api_key_encrypted BYTEA,
+    llm_api_key_iv BYTEA,
+    llm_key_last_validated TIMESTAMPTZ,
+    query_tier INTEGER DEFAULT 1,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -2430,6 +2439,19 @@ CREATE TABLE query_token_log (
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
     api_calls INTEGER NOT NULL DEFAULT 1,
     queries_consumed INTEGER NOT NULL DEFAULT 1,
+    llm_provider TEXT,
+    llm_model TEXT,
+    tool_calls_attempted INTEGER NOT NULL DEFAULT 0,
+    tool_calls_failed INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_query_token_log_instance ON query_token_log(instance_id, created_at);
+
+CREATE TABLE api_key_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    instance_id BIGINT NOT NULL REFERENCES instances(id),
+    action TEXT NOT NULL,
+    performed_by BIGINT REFERENCES auth_users(id),
+    details TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -25,7 +25,17 @@ export function AuthProvider({ children }) {
             if (res.ok) {
                 const data = await res.json();
                 setUser(data.user);
-                setInstances(data.instances || []);
+                const userInstances = data.instances || [];
+                setInstances(userInstances);
+
+                // Clear stale instance_id cookie if it doesn't match any membership
+                setInstanceId(prev => {
+                    if (prev && !userInstances.some(i => i.id === prev)) {
+                        document.cookie = 'instance_id=; path=/; max-age=0';
+                        return null;
+                    }
+                    return prev;
+                });
             } else {
                 setUser(null);
                 setInstances([]);

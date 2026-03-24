@@ -9,15 +9,11 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Generator
 
-import anthropic
 from openpyxl import Workbook
 
 from collections import defaultdict
 
 from backend.config import (
-    ANTHROPIC_API_KEY,
-    ANTHROPIC_API_KEY_SPARE,
-    CLAUDE_MODEL,
     BREVO_SENDER_EMAIL,
     BREVO_SENDER_NAME,
     EMAIL_RATE_LIMIT_PER_HOUR,
@@ -27,6 +23,14 @@ from backend.config import (
 )
 from backend.database import execute_query, get_home_site, get_schema_ddl, validate_query
 from backend.email_sender import send_email as smtp_send_email
+from backend.llm_client import (
+    LLMError,
+    StreamContext,
+    get_deployment_mode,
+    get_llm_config,
+    make_completion,
+    make_stream,
+)
 from backend.routes.upload import get_chat_attachment_path, resolve_s3_attachment_for_email
 from backend.prompts import SYSTEM_STATIC, INSTANCE_CONTEXT_TEMPLATE, REQUEST_CONTEXT_TEMPLATE, TOOLS
 
@@ -59,13 +63,18 @@ _ADMIN_TOOLS = {"manage_approval_rules", "review_approvals"}
 _OWNER_TOOLS = {"invite_user"}
 
 
+def _tool_name(t: dict) -> str:
+    """Extract tool name from OpenAI-format tool dict."""
+    return t.get("function", {}).get("name", t.get("name", ""))
+
+
 def _filter_tools(user_role: str) -> list[dict]:
     """Return the TOOLS list filtered by user role."""
     if user_role == "owner":
         return TOOLS
     if user_role == "admin":
-        return [t for t in TOOLS if t["name"] not in _OWNER_TOOLS]
-    return [t for t in TOOLS if t["name"] not in (_ADMIN_TOOLS | _OWNER_TOOLS)]
+        return [t for t in TOOLS if _tool_name(t) not in _OWNER_TOOLS]
+    return [t for t in TOOLS if _tool_name(t) not in (_ADMIN_TOOLS | _OWNER_TOOLS)]
 
 
 def _trim_history(history: list[dict], max_messages: int) -> list[dict]:
@@ -119,23 +128,7 @@ def _find_matching_rule(sql: str, rules: list[dict]) -> dict | None:
     return None
 
 
-_primary_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-_spare_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY_SPARE) if ANTHROPIC_API_KEY_SPARE else None
-_active_client: anthropic.Anthropic = _primary_client
-
-
-def _get_client() -> anthropic.Anthropic:
-    return _active_client
-
-
-def _swap_to_spare() -> bool:
-    """Switch to spare client. Returns True if swap succeeded."""
-    global _active_client
-    if _spare_client and _active_client is _primary_client:
-        _active_client = _spare_client
-        print("[claude_client] Switched to spare API key")
-        return True
-    return False
+CLAUDE_MODEL = "claude-sonnet-4-6"  # kept for backward compat references
 
 # In-memory store for generated files: {file_id: (filename, bytes, created_ts)}
 _generated_files: dict[str, tuple[str, bytes, float]] = {}
@@ -320,22 +313,6 @@ def _build_system_blocks(user_role: str = "admin", current_user: dict[str, Any] 
         {"type": "text", "text": instance_context, "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": request_context},
     ]
-
-
-def _build_content(response) -> list[dict[str, Any]]:
-    """Convert API response content blocks to serializable dicts."""
-    content = []
-    for block in response.content:
-        if block.type == "text":
-            content.append({"type": "text", "text": block.text})
-        elif block.type == "tool_use":
-            content.append({
-                "type": "tool_use",
-                "id": block.id,
-                "name": block.name,
-                "input": block.input,
-            })
-    return content
 
 
 def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role: str = "admin", instance_id: int = 1, current_user: dict[str, Any] | None = None) -> list[dict]:
@@ -882,6 +859,7 @@ def _execute_tools(assistant_content: list[dict], sql_log: list[dict], user_role
             ticket_id = inp["ticket_id"]
             reply_body = inp["body"]
             update_status = inp.get("update_status")
+            person_id = current_user["person_id"] if current_user and current_user.get("person_id") else None
 
             # Check email addon
             addon_check = execute_query(
@@ -1120,12 +1098,19 @@ def chat_stream(
     Yields SSE-formatted strings (event: type\\ndata: json\\n\\n).
     Populates state["history"] with the updated message history when done.
     """
-    # Check query limit before processing
-    limit_error = _increment_query_count(instance_id)
-    if limit_error:
-        yield f"event: token\ndata: {json.dumps({'text': limit_error['message']})}\n\n"
-        yield f"event: done\ndata: {json.dumps({'sql_executed': []})}\n\n"
-        return
+    # Resolve LLM config for metering and logging
+    llm_cfg = get_llm_config(instance_id)
+    deployment_mode = llm_cfg["deployment_mode"]
+    llm_provider = llm_cfg["provider"]
+    llm_model = llm_cfg["model"]
+
+    # Check query limit (SaaS only — BYOK has no query limits)
+    if deployment_mode == "saas":
+        limit_error = _increment_query_count(instance_id)
+        if limit_error:
+            yield f"event: token\ndata: {json.dumps({'text': limit_error['message']})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'sql_executed': []})}\n\n"
+            return
 
     system_blocks = _build_system_blocks(user_role, current_user, instance_id=instance_id)
     messages = _trim_history(list(history), MAX_HISTORY_MESSAGES) + [{"role": "user", "content": user_message}]
@@ -1136,31 +1121,26 @@ def chat_stream(
     total_cache_creation_tokens = 0
     total_cache_read_tokens = 0
     api_calls = 0
+    tool_calls_attempted = 0
+    tool_calls_failed = 0
 
     while True:
         try:
-            with _get_client().messages.stream(
-                model=CLAUDE_MODEL,
-                max_tokens=4096,
-                system=system_blocks,
-                tools=filtered_tools,
-                messages=messages,
-            ) as stream:
-                for text_chunk in stream.text_stream:
-                    yield f"event: token\ndata: {json.dumps({'text': text_chunk})}\n\n"
-                response = stream.get_final_message()
-        except (anthropic.RateLimitError, anthropic.AuthenticationError) as exc:
-            if _swap_to_spare():
-                yield f"event: token\ndata: {json.dumps({'text': ''})}\n\n"
-                continue
-            raise exc
+            ctx = make_stream(instance_id, messages, system_blocks, filtered_tools)
+            for text_chunk in ctx.text_stream():
+                yield f"event: token\ndata: {json.dumps({'text': text_chunk})}\n\n"
+            response = ctx.get_final_response()
+        except LLMError as exc:
+            yield f"event: token\ndata: {json.dumps({'text': str(exc)})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'sql_executed': sql_log})}\n\n"
+            return
 
         api_calls += 1
-        total_input_tokens += response.usage.input_tokens
-        total_output_tokens += response.usage.output_tokens
-        total_cache_creation_tokens += getattr(response.usage, "cache_creation_input_tokens", 0)
-        total_cache_read_tokens += getattr(response.usage, "cache_read_input_tokens", 0)
-        assistant_content = _build_content(response)
+        total_input_tokens += response.usage["input_tokens"]
+        total_output_tokens += response.usage["output_tokens"]
+        total_cache_creation_tokens += response.usage.get("cache_creation_input_tokens", 0)
+        total_cache_read_tokens += response.usage.get("cache_read_input_tokens", 0)
+        assistant_content = response.content
         messages.append({"role": "assistant", "content": assistant_content})
 
         if response.stop_reason == "end_turn":
@@ -1168,11 +1148,11 @@ def chat_stream(
             total_tokens = total_input_tokens + total_output_tokens + total_cache_creation_tokens + total_cache_read_tokens
             queries_consumed = max(1, math.ceil(total_tokens / QUERY_TOKEN_THRESHOLD))
             extra = queries_consumed - 1
-            if extra > 0:
+            if deployment_mode == "saas" and extra > 0:
                 _charge_extra_queries(instance_id, extra)
             execute_query(
-                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, cache_creation_tokens, cache_read_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [instance_id, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens, api_calls, queries_consumed],
+                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, cache_creation_tokens, cache_read_tokens, api_calls, queries_consumed, tool_calls_attempted, tool_calls_failed, llm_provider, llm_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [instance_id, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens, api_calls, queries_consumed, tool_calls_attempted, tool_calls_failed, llm_provider, llm_model],
                 instance_id=None,
             )
             yield f"event: done\ndata: {json.dumps({'sql_executed': sql_log, 'tokens_used': total_tokens, 'queries_consumed': queries_consumed})}\n\n"
@@ -1182,6 +1162,12 @@ def chat_stream(
             sql_log_before = len(sql_log)
             tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id, current_user=current_user)
             _truncate_tool_results(tool_results, MAX_TOOL_RESULT_CHARS)
+            # Track tool call success/failure
+            for tr in tool_results:
+                tool_calls_attempted += 1
+                content_str = tr.get("content", "")
+                if isinstance(content_str, str) and '"error"' in content_str:
+                    tool_calls_failed += 1
             # Notify frontend about each SQL/file operation
             for entry in sql_log[sql_log_before:]:
                 if entry.get("tool") == "generate_excel":
@@ -1199,17 +1185,24 @@ def chat(
     instance_id: int = 1,
 ) -> dict[str, Any]:
     """Non-streaming chat (kept as fallback)."""
-    # Check query limit before processing
-    limit_error = _increment_query_count(instance_id)
-    if limit_error:
-        return {
-            "response": limit_error["message"],
-            "sql_executed": [],
-            "history": list(history) + [
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": [{"type": "text", "text": limit_error["message"]}]},
-            ],
-        }
+    # Resolve LLM config for metering and logging
+    llm_cfg = get_llm_config(instance_id)
+    deployment_mode = llm_cfg["deployment_mode"]
+    llm_provider = llm_cfg["provider"]
+    llm_model = llm_cfg["model"]
+
+    # Check query limit (SaaS only — BYOK has no query limits)
+    if deployment_mode == "saas":
+        limit_error = _increment_query_count(instance_id)
+        if limit_error:
+            return {
+                "response": limit_error["message"],
+                "sql_executed": [],
+                "history": list(history) + [
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": [{"type": "text", "text": limit_error["message"]}]},
+                ],
+            }
 
     system_blocks = _build_system_blocks(user_role, current_user, instance_id=instance_id)
     messages = _trim_history(list(history), MAX_HISTORY_MESSAGES) + [{"role": "user", "content": user_message}]
@@ -1220,27 +1213,25 @@ def chat(
     total_cache_creation_tokens = 0
     total_cache_read_tokens = 0
     api_calls = 0
+    tool_calls_attempted = 0
+    tool_calls_failed = 0
 
     while True:
         try:
-            response = _get_client().messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=4096,
-                system=system_blocks,
-                tools=filtered_tools,
-                messages=messages,
-            )
-        except (anthropic.RateLimitError, anthropic.AuthenticationError) as exc:
-            if _swap_to_spare():
-                continue
-            raise exc
+            response = make_completion(instance_id, messages, system_blocks, filtered_tools)
+        except LLMError as exc:
+            return {
+                "response": str(exc),
+                "sql_executed": sql_log,
+                "history": messages,
+            }
 
         api_calls += 1
-        total_input_tokens += response.usage.input_tokens
-        total_output_tokens += response.usage.output_tokens
-        total_cache_creation_tokens += getattr(response.usage, "cache_creation_input_tokens", 0)
-        total_cache_read_tokens += getattr(response.usage, "cache_read_input_tokens", 0)
-        assistant_content = _build_content(response)
+        total_input_tokens += response.usage["input_tokens"]
+        total_output_tokens += response.usage["output_tokens"]
+        total_cache_creation_tokens += response.usage.get("cache_creation_input_tokens", 0)
+        total_cache_read_tokens += response.usage.get("cache_read_input_tokens", 0)
+        assistant_content = response.content
         messages.append({"role": "assistant", "content": assistant_content})
 
         if response.stop_reason == "end_turn":
@@ -1248,11 +1239,11 @@ def chat(
             total_tokens = total_input_tokens + total_output_tokens + total_cache_creation_tokens + total_cache_read_tokens
             queries_consumed = max(1, math.ceil(total_tokens / QUERY_TOKEN_THRESHOLD))
             extra = queries_consumed - 1
-            if extra > 0:
+            if deployment_mode == "saas" and extra > 0:
                 _charge_extra_queries(instance_id, extra)
             execute_query(
-                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, cache_creation_tokens, cache_read_tokens, api_calls, queries_consumed) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [instance_id, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens, api_calls, queries_consumed],
+                "INSERT INTO query_token_log (instance_id, total_input_tokens, total_output_tokens, cache_creation_tokens, cache_read_tokens, api_calls, queries_consumed, tool_calls_attempted, tool_calls_failed, llm_provider, llm_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [instance_id, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens, api_calls, queries_consumed, tool_calls_attempted, tool_calls_failed, llm_provider, llm_model],
                 instance_id=None,
             )
             return {
@@ -1266,4 +1257,9 @@ def chat(
         if response.stop_reason == "tool_use":
             tool_results = _execute_tools(assistant_content, sql_log, user_role, instance_id=instance_id, current_user=current_user)
             _truncate_tool_results(tool_results, MAX_TOOL_RESULT_CHARS)
+            for tr in tool_results:
+                tool_calls_attempted += 1
+                content_str = tr.get("content", "")
+                if isinstance(content_str, str) and '"error"' in content_str:
+                    tool_calls_failed += 1
             messages.append({"role": "user", "content": tool_results})

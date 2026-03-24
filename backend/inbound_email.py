@@ -144,19 +144,19 @@ def _extract_fields_with_claude(subject: str, body: str, instance_id: int) -> di
 
     Falls back to raw extraction on quota exhaustion or API error.
     """
-    from backend.claude_client import _get_client, _increment_query_count, CLAUDE_MODEL
+    from backend.claude_client import _increment_query_count
+    from backend.llm_client import LLMError, get_deployment_mode, make_completion
 
-    # Try to consume a query
-    limit_error = _increment_query_count(instance_id)
-    if limit_error:
-        logger.warning("Query limit reached for instance %d, using raw extraction", instance_id)
-        return _raw_extract(subject, body)
+    # Try to consume a query (SaaS only)
+    if get_deployment_mode(instance_id) == "saas":
+        limit_error = _increment_query_count(instance_id)
+        if limit_error:
+            logger.warning("Query limit reached for instance %d, using raw extraction", instance_id)
+            return _raw_extract(subject, body)
 
     try:
-        client = _get_client()
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=512,
+        response = make_completion(
+            instance_id,
             messages=[{
                 "role": "user",
                 "content": (
@@ -168,10 +168,16 @@ def _extract_fields_with_claude(subject: str, body: str, instance_id: int) -> di
                     f"<email_body>{body}</email_body>"
                 ),
             }],
-            system=_EXTRACTION_PROMPT,
+            system=[{"type": "text", "text": _EXTRACTION_PROMPT}],
+            tools=[],
+            max_tokens=512,
         )
 
-        text = response.content[0].text if response.content else ""
+        text = ""
+        for block in response.content:
+            if block.get("type") == "text":
+                text = block["text"]
+                break
         # Parse JSON from response — handle markdown code fences
         text = text.strip()
         if text.startswith("```"):
@@ -187,6 +193,9 @@ def _extract_fields_with_claude(subject: str, body: str, instance_id: int) -> di
             "priority": str(fields.get("priority", "medium")),
             "keywords": str(fields.get("keywords", "")),
         }
+    except LLMError as e:
+        logger.error("LLM extraction failed: %s", e)
+        return _raw_extract(subject, body)
     except Exception as e:
         logger.error("Claude extraction failed: %s", e)
         return _raw_extract(subject, body)

@@ -1,4 +1,8 @@
-"""Stripe billing integration for TrueCore.cloud per-user subscription model."""
+"""Stripe billing integration for TrueCore.cloud.
+
+SaaS mode: query-tier subscription (€24.99 per 250 queries, quantity 1-40).
+BYOK mode: per-seat hosting fee (€9.99/user/month).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,8 @@ from backend.config import (
     APP_URL,
     STRIPE_SECRET_KEY,
     STRIPE_PRICE_USER_SEAT,
+    STRIPE_PRICE_QUERY_TIER,
+    STRIPE_PRICE_BYOK_USER_SEAT,
     STRIPE_PRICE_EMAIL_ADDON,
     STRIPE_PRICE_DAILY_REPORTS_ADDON,
     STRIPE_PRICE_INBOUND_EMAIL_ADDON,
@@ -20,7 +26,7 @@ stripe.api_key = STRIPE_SECRET_KEY
 
 
 def _stripe_configured() -> bool:
-    return bool(STRIPE_SECRET_KEY and STRIPE_PRICE_USER_SEAT)
+    return bool(STRIPE_SECRET_KEY and (STRIPE_PRICE_QUERY_TIER or STRIPE_PRICE_USER_SEAT))
 
 
 def _log_event(instance_id: int, event_type: str, details: str | None = None) -> None:
@@ -64,8 +70,11 @@ def _get_stripe_customer_id(auth_user_id: int) -> str | None:
 # Subscription
 # ---------------------------------------------------------------------------
 
-def create_instance_subscription(instance_id: int, auth_user_id: int) -> dict:
-    """Create a Stripe subscription with 1 user seat for a new instance."""
+def create_instance_subscription(instance_id: int, auth_user_id: int, query_tier: int = 1) -> dict:
+    """Create a Stripe subscription for a SaaS instance (query-tier based).
+
+    *query_tier* is the number of 250-query blocks (1-40).
+    """
     if not _stripe_configured():
         return {"skipped": True, "reason": "Stripe not configured"}
 
@@ -73,22 +82,65 @@ def create_instance_subscription(instance_id: int, auth_user_id: int) -> dict:
     if not customer_id:
         return {"error": "No Stripe customer for this user"}
 
+    price_id = STRIPE_PRICE_QUERY_TIER or STRIPE_PRICE_USER_SEAT
+    query_tier = max(1, min(40, query_tier))
+
     subscription = stripe.Subscription.create(
         customer=customer_id,
-        items=[{"price": STRIPE_PRICE_USER_SEAT, "quantity": 1}],
-        metadata={"instance_id": str(instance_id), "auth_user_id": str(auth_user_id)},
+        items=[{"price": price_id, "quantity": query_tier}],
+        metadata={"instance_id": str(instance_id), "auth_user_id": str(auth_user_id), "mode": "saas"},
+        payment_behavior="default_incomplete",
+        expand=["latest_invoice.payment_intent"],
+    )
+
+    new_limit = query_tier * 250
+    execute_query(
+        "UPDATE instances SET stripe_subscription_id = ?, billing_owner_id = ?, tier = 'paid', "
+        "query_limit = ?, query_tier = ?, deployment_mode = 'saas', query_pool_reset_at = NOW() WHERE id = ?",
+        [subscription.id, auth_user_id, new_limit, query_tier, instance_id],
+        instance_id=None,
+    )
+
+    _log_event(instance_id, "subscription_created", f"SaaS subscription {subscription.id} with {new_limit} queries (tier {query_tier})")
+
+    return {
+        "subscription_id": subscription.id,
+        "status": subscription.status,
+        "query_tier": query_tier,
+        "query_limit": new_limit,
+        "client_secret": (
+            subscription.latest_invoice.payment_intent.client_secret
+            if subscription.latest_invoice and subscription.latest_invoice.payment_intent
+            else None
+        ),
+    }
+
+
+def create_byok_subscription(instance_id: int, auth_user_id: int) -> dict:
+    """Create a Stripe subscription for a BYOK instance (per-seat hosting)."""
+    if not _stripe_configured() or not STRIPE_PRICE_BYOK_USER_SEAT:
+        return {"skipped": True, "reason": "BYOK pricing not configured"}
+
+    customer_id = _get_stripe_customer_id(auth_user_id)
+    if not customer_id:
+        return {"error": "No Stripe customer for this user"}
+
+    subscription = stripe.Subscription.create(
+        customer=customer_id,
+        items=[{"price": STRIPE_PRICE_BYOK_USER_SEAT, "quantity": 1}],
+        metadata={"instance_id": str(instance_id), "auth_user_id": str(auth_user_id), "mode": "byok"},
         payment_behavior="default_incomplete",
         expand=["latest_invoice.payment_intent"],
     )
 
     execute_query(
         "UPDATE instances SET stripe_subscription_id = ?, billing_owner_id = ?, tier = 'paid', "
-        "query_limit = 250, query_pool_reset_at = NOW() WHERE id = ?",
+        "deployment_mode = 'byok', query_limit = NULL, query_tier = NULL, query_pool_reset_at = NOW() WHERE id = ?",
         [subscription.id, auth_user_id, instance_id],
         instance_id=None,
     )
 
-    _log_event(instance_id, "subscription_created", f"Subscription {subscription.id} created with 1 seat")
+    _log_event(instance_id, "subscription_created", f"BYOK subscription {subscription.id} with 1 seat")
 
     return {
         "subscription_id": subscription.id,
@@ -99,6 +151,41 @@ def create_instance_subscription(instance_id: int, auth_user_id: int) -> dict:
             else None
         ),
     }
+
+
+def update_query_tier(instance_id: int, new_tier: int) -> dict:
+    """Update the SaaS query tier (1-40). Adjusts Stripe quantity and query_limit."""
+    new_tier = max(1, min(40, new_tier))
+
+    if not _stripe_configured():
+        new_limit = new_tier * 250
+        execute_query(
+            "UPDATE instances SET query_limit = ?, query_tier = ? WHERE id = ?",
+            [new_limit, new_tier, instance_id],
+            instance_id=None,
+        )
+        return {"skipped": True, "query_tier": new_tier, "query_limit": new_limit}
+
+    sub_id = _get_subscription_id(instance_id)
+    if not sub_id:
+        return {"error": "No subscription for this instance"}
+
+    price_id = STRIPE_PRICE_QUERY_TIER or STRIPE_PRICE_USER_SEAT
+    item = _find_subscription_item(sub_id, price_id)
+    if not item:
+        return {"error": "Query tier item not found on subscription"}
+
+    stripe.SubscriptionItem.modify(item["id"], quantity=new_tier)
+
+    new_limit = new_tier * 250
+    execute_query(
+        "UPDATE instances SET query_limit = ?, query_tier = ? WHERE id = ?",
+        [new_limit, new_tier, instance_id],
+        instance_id=None,
+    )
+
+    _log_event(instance_id, "tier_updated", f"Query tier updated to {new_tier} ({new_limit} queries)")
+    return {"query_tier": new_tier, "query_limit": new_limit}
 
 
 def _get_subscription_id(instance_id: int) -> str | None:
@@ -365,30 +452,62 @@ def create_customer_portal_session(auth_user_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Subscription cancellation (used during mode switch)
+# ---------------------------------------------------------------------------
+
+def cancel_instance_subscription(instance_id: int) -> dict:
+    """Cancel the Stripe subscription for an instance and clear the reference."""
+    sub_id = _get_subscription_id(instance_id)
+
+    if sub_id and _stripe_configured():
+        try:
+            stripe.Subscription.cancel(sub_id)
+        except Exception as e:
+            _log_event(instance_id, "cancel_failed", str(e))
+
+    execute_query(
+        "UPDATE instances SET stripe_subscription_id = NULL WHERE id = ?",
+        [instance_id],
+        instance_id=None,
+    )
+
+    if sub_id:
+        _log_event(instance_id, "subscription_cancelled", f"Subscription {sub_id} cancelled (mode switch)")
+
+    return {"cancelled": bool(sub_id)}
+
+
+# ---------------------------------------------------------------------------
 # Webhook handlers
 # ---------------------------------------------------------------------------
 
 def handle_subscription_renewed(subscription_id: str) -> None:
     """On subscription renewal: reset query pool and recalculate limit."""
     result = execute_query(
-        "SELECT id FROM instances WHERE stripe_subscription_id = ?",
+        "SELECT id, deployment_mode, query_tier FROM instances WHERE stripe_subscription_id = ?",
         [subscription_id],
         instance_id=None,
     )
     if not result.get("rows"):
         return
 
-    instance_id = result["rows"][0]["id"]
+    row = result["rows"][0]
+    instance_id = row["id"]
+    mode = row.get("deployment_mode", "saas")
 
-    # Count active memberships
-    member_count_result = execute_query(
-        "SELECT COUNT(*) as cnt FROM instance_memberships WHERE instance_id = ?",
-        [instance_id],
-        instance_id=None,
-    )
-    active_users = member_count_result["rows"][0]["cnt"] if member_count_result.get("rows") else 1
+    if mode == "byok":
+        # BYOK has no query limits — just reset the counter for tracking
+        execute_query(
+            "UPDATE instances SET query_count = 0, query_pool_reset_at = NOW() WHERE id = ?",
+            [instance_id],
+            instance_id=None,
+        )
+        _log_event(instance_id, "queries_reset", "BYOK pool reset (tracking only)")
+        return
 
-    new_limit = active_users * 250
+    # SaaS: reset based on query_tier
+    query_tier = row.get("query_tier") or 1
+    new_limit = query_tier * 250
 
     execute_query(
         "UPDATE instances SET query_count = 0, query_limit = ?, query_pool_reset_at = NOW() WHERE id = ?",
@@ -396,7 +515,7 @@ def handle_subscription_renewed(subscription_id: str) -> None:
         instance_id=None,
     )
 
-    _log_event(instance_id, "queries_reset", f"Pool reset: {new_limit} queries ({active_users} users)")
+    _log_event(instance_id, "queries_reset", f"Pool reset: {new_limit} queries (tier {query_tier})")
 
 
 def handle_payment_failed(subscription_id: str) -> None:
@@ -460,10 +579,12 @@ def handle_subscription_cancelled(subscription_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 def get_billing_status(instance_id: int) -> dict:
-    """Return billing info for an instance."""
+    """Return billing info for an instance (deployment-mode aware)."""
     inst = execute_query(
         "SELECT i.stripe_subscription_id, i.billing_owner_id, i.query_count, i.query_limit, "
-        "i.email_addon, i.inbound_email_addon, i.daily_reports_addon, i.bookings_addon, i.query_pool_reset_at, i.email_signature, i.tier "
+        "i.email_addon, i.inbound_email_addon, i.daily_reports_addon, i.bookings_addon, "
+        "i.query_pool_reset_at, i.email_signature, i.tier, i.deployment_mode, i.query_tier, "
+        "i.llm_provider, i.llm_model, i.llm_key_last_validated "
         "FROM instances i WHERE i.id = ?",
         [instance_id],
         instance_id=None,
@@ -472,6 +593,7 @@ def get_billing_status(instance_id: int) -> dict:
         return {"error": "Instance not found"}
 
     row = inst["rows"][0]
+    mode = row.get("deployment_mode") or "saas"
 
     # Count active members
     member_result = execute_query(
@@ -497,14 +619,14 @@ def get_billing_status(instance_id: int) -> dict:
         instance_id=None,
     )
 
+    query_limit = row["query_limit"] or 0
     status = {
         "tier": row["tier"],
+        "deployment_mode": mode,
         "seat_count": seat_count,
-        "base_queries": seat_count * 250,
-        "purchased_queries": purchased_queries,
         "query_count": row["query_count"],
-        "query_limit": row["query_limit"],
-        "queries_remaining": max(0, row["query_limit"] - row["query_count"]),
+        "query_limit": query_limit if mode == "saas" else None,
+        "queries_remaining": max(0, query_limit - row["query_count"]) if mode == "saas" else None,
         "email_addon": bool(row["email_addon"]),
         "inbound_email_addon": bool(row.get("inbound_email_addon", False)),
         "daily_reports_addon": bool(row["daily_reports_addon"]),
@@ -512,11 +634,25 @@ def get_billing_status(instance_id: int) -> dict:
         "email_signature": row["email_signature"] or "",
         "query_pool_reset_at": str(row["query_pool_reset_at"]) if row["query_pool_reset_at"] else None,
         "has_subscription": bool(row["stripe_subscription_id"]),
+        "purchased_queries": purchased_queries,
         "events": [
             {"event_type": e["event_type"], "details": e["details"], "created_at": str(e["created_at"])}
             for e in events_result.get("rows", [])
         ],
     }
+
+    if mode == "saas":
+        query_tier = row.get("query_tier") or 1
+        status["query_tier"] = query_tier
+        status["base_queries"] = query_tier * 250
+    else:
+        # BYOK-specific fields
+        status["llm_provider"] = row.get("llm_provider") or "anthropic"
+        status["llm_model"] = row.get("llm_model")
+        status["has_api_key"] = bool(row.get("llm_key_last_validated"))
+        status["llm_key_last_validated"] = (
+            str(row["llm_key_last_validated"]) if row.get("llm_key_last_validated") else None
+        )
 
     # If Stripe is configured, fetch subscription details
     if _stripe_configured() and row["stripe_subscription_id"]:

@@ -71,19 +71,19 @@ def _extract_booking_fields(subject: str, body: str, instance_id: int) -> dict |
 
     Returns parsed fields dict or None on failure.
     """
-    from backend.claude_client import _get_client, _increment_query_count, CLAUDE_MODEL
+    from backend.claude_client import _increment_query_count
+    from backend.llm_client import LLMError, get_deployment_mode, make_completion
 
-    limit_error = _increment_query_count(instance_id)
-    if limit_error:
-        logger.warning("Query limit reached for instance %d, cannot process booking email", instance_id)
-        return None
+    if get_deployment_mode(instance_id) == "saas":
+        limit_error = _increment_query_count(instance_id)
+        if limit_error:
+            logger.warning("Query limit reached for instance %d, cannot process booking email", instance_id)
+            return None
 
     try:
-        client = _get_client()
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=512,
+        response = make_completion(
+            instance_id,
             messages=[{
                 "role": "user",
                 "content": (
@@ -96,10 +96,16 @@ def _extract_booking_fields(subject: str, body: str, instance_id: int) -> dict |
                     f"<email_body>{body}</email_body>"
                 ),
             }],
-            system=_BOOKING_EXTRACTION_PROMPT,
+            system=[{"type": "text", "text": _BOOKING_EXTRACTION_PROMPT}],
+            tools=[],
+            max_tokens=512,
         )
 
-        text = response.content[0].text if response.content else ""
+        text = ""
+        for block in response.content:
+            if block.get("type") == "text":
+                text = block["text"]
+                break
         text = text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```\w*\n?", "", text)
@@ -122,6 +128,9 @@ def _extract_booking_fields(subject: str, body: str, instance_id: int) -> dict |
             "title": str(fields.get("title", "Email booking"))[:100],
             "notes": fields.get("notes"),
         }
+    except LLMError as e:
+        logger.error("LLM booking extraction failed: %s", e)
+        return None
     except Exception as e:
         logger.error("Claude booking extraction failed: %s", e)
         return None
